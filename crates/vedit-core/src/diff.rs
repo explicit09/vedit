@@ -208,43 +208,47 @@ fn diff_track(before: &Track, after: &Track, out: &mut Vec<Change>) {
         })
         .collect();
 
-    // Strong-then-weak two-pass match.
+    // Match clips in two passes:
+    //   1. Strong fingerprint = (media_reference, source_range). When this
+    //      collides (multiple clips with same media + range), pair them
+    //      by closest position so re-using the same clip across the
+    //      timeline doesn't produce "self-moved" entries.
+    //   2. Weak fingerprint = name. Same position-aware tie-breaking.
+    //
+    // The position-aware step is what makes vedit usable on real Resolve
+    // exports, where the same media file is dropped onto the timeline
+    // many times.
     let mut before_used = vec![false; before_clips.len()];
     let mut after_used = vec![false; after_clips.len()];
-    let mut matches: Vec<(usize, usize)> = Vec::new(); // (before_pos_in_list, after_pos_in_list)
+    let mut matches: Vec<(usize, usize)> = Vec::new();
 
-    // Pass 1: strong fingerprint (media + source_range exact match).
-    for (a_pos, (_, a_clip)) in after_clips.iter().enumerate() {
-        for (b_pos, (_, b_clip)) in before_clips.iter().enumerate() {
-            if before_used[b_pos] {
-                continue;
-            }
-            if strong_match(b_clip, a_clip) {
-                before_used[b_pos] = true;
-                after_used[a_pos] = true;
-                matches.push((b_pos, a_pos));
-                break;
-            }
-        }
-    }
+    let strong_pairs = pair_by_fingerprint(
+        &before_clips,
+        &after_clips,
+        &mut before_used,
+        &mut after_used,
+        strong_fingerprint,
+    );
+    matches.extend(strong_pairs);
 
-    // Pass 2: weak fingerprint (media + name match) for leftovers.
-    for (a_pos, (_, a_clip)) in after_clips.iter().enumerate() {
-        if after_used[a_pos] {
-            continue;
-        }
-        for (b_pos, (_, b_clip)) in before_clips.iter().enumerate() {
-            if before_used[b_pos] {
-                continue;
-            }
-            if weak_match(b_clip, a_clip) {
-                before_used[b_pos] = true;
-                after_used[a_pos] = true;
-                matches.push((b_pos, a_pos));
-                break;
-            }
-        }
-    }
+    let weak_pairs = pair_by_fingerprint(
+        &before_clips,
+        &after_clips,
+        &mut before_used,
+        &mut after_used,
+        weak_fingerprint,
+    );
+    matches.extend(weak_pairs);
+
+    // A clip is "moved" only if its position breaks the relative order of
+    // other matched clips. Compute the longest order-preserving subset of
+    // matches (LCS-style); pairs in that subset stayed in place, the
+    // others moved.
+    matches.sort_by_key(|(b, _)| *b);
+    let stable_after: std::collections::HashSet<usize> =
+        longest_increasing_after_indices(&matches)
+            .into_iter()
+            .collect();
 
     // Emit changes for matched clips.
     for (b_pos, a_pos) in &matches {
@@ -262,9 +266,11 @@ fn diff_track(before: &Track, after: &Track, out: &mut Vec<Change>) {
                 });
             }
 
-        // Move detection uses clip-list positions, not full-children positions.
-        // That way an inserted transition doesn't register as a move.
-        if b_pos != a_pos {
+        // Move detection: only flag pairs that aren't part of the stable
+        // order. If an inserted/removed clip merely shifted absolute
+        // indices, the pair stays in `stable_after` and we don't report
+        // a move.
+        if !stable_after.contains(a_pos) {
             let after_neighbor = after_clips.get(*a_pos + 1).map(|(_, c)| (*c).into());
             let before_neighbor = if *a_pos > 0 {
                 after_clips.get(*a_pos - 1).map(|(_, c)| (*c).into())
@@ -393,27 +399,119 @@ fn transitions_after_each_clip(
     out
 }
 
-fn strong_match(a: &Clip, b: &Clip) -> bool {
-    if a.media_reference.is_none() || b.media_reference.is_none() {
-        return false;
-    }
-    if a.media_reference != b.media_reference {
-        return false;
-    }
-    match (a.source_range, b.source_range) {
-        (Some(x), Some(y)) => time_ranges_equal(&x, &y),
-        _ => false,
+/// A serializable identity key for grouping clips. `None` means "this
+/// clip cannot be identified at this fingerprint level" — skip it.
+type Fingerprint = Option<String>;
+
+fn strong_fingerprint(c: &Clip) -> Fingerprint {
+    let media = c.media_reference.as_deref()?;
+    let sr = c.source_range.as_ref()?;
+    Some(format!(
+        "{media}|{:.6}|{:.6}|{:.6}|{:.6}",
+        sr.start_time.value, sr.start_time.rate, sr.duration.value, sr.duration.rate
+    ))
+}
+
+fn weak_fingerprint(c: &Clip) -> Fingerprint {
+    if !c.name.is_empty() {
+        Some(format!("name:{}", c.name))
+    } else {
+        c.media_reference.as_ref().map(|m| format!("media:{m}"))
     }
 }
 
-fn weak_match(a: &Clip, b: &Clip) -> bool {
-    if a.media_reference.is_some() && a.media_reference == b.media_reference {
-        return true;
+/// Pair clips on each side that share a fingerprint, by closest position.
+///
+/// For each fingerprint that appears on both sides:
+/// - List the unmatched before-positions sorted ascending
+/// - List the unmatched after-positions sorted ascending
+/// - Pair them in order. This way, the i-th occurrence of a clip in the
+///   before-track maps to the i-th occurrence in the after-track,
+///   producing the most natural mapping when a media file is reused
+///   multiple times.
+fn pair_by_fingerprint(
+    before_clips: &[(usize, &Clip)],
+    after_clips: &[(usize, &Clip)],
+    before_used: &mut [bool],
+    after_used: &mut [bool],
+    fingerprint: impl Fn(&Clip) -> Fingerprint,
+) -> Vec<(usize, usize)> {
+    let mut groups: std::collections::BTreeMap<String, (Vec<usize>, Vec<usize>)> =
+        Default::default();
+
+    for (b_pos, (_, b_clip)) in before_clips.iter().enumerate() {
+        if before_used[b_pos] {
+            continue;
+        }
+        if let Some(fp) = fingerprint(b_clip) {
+            groups.entry(fp).or_default().0.push(b_pos);
+        }
     }
-    if !a.name.is_empty() && a.name == b.name {
-        return true;
+    for (a_pos, (_, a_clip)) in after_clips.iter().enumerate() {
+        if after_used[a_pos] {
+            continue;
+        }
+        if let Some(fp) = fingerprint(a_clip) {
+            groups.entry(fp).or_default().1.push(a_pos);
+        }
     }
-    false
+
+    let mut out = Vec::new();
+    for (_, (befores, afters)) in groups {
+        for (b_pos, a_pos) in befores.into_iter().zip(afters) {
+            before_used[b_pos] = true;
+            after_used[a_pos] = true;
+            out.push((b_pos, a_pos));
+        }
+    }
+    out
+}
+
+/// Given matches sorted ascending by before-position, return the
+/// after-positions that form a longest strictly-increasing subsequence.
+/// Those are the pairs whose relative order was preserved, i.e., the
+/// clips that didn't actually move — their absolute indices may have
+/// shifted only because of insertions/removals around them.
+fn longest_increasing_after_indices(matches: &[(usize, usize)]) -> Vec<usize> {
+    let n = matches.len();
+    if n == 0 {
+        return Vec::new();
+    }
+    let after: Vec<usize> = matches.iter().map(|(_, a)| *a).collect();
+    // Patience sorting / LIS with predecessors so we can reconstruct.
+    let mut tails: Vec<usize> = Vec::new(); // indices into `after`
+    let mut prev: Vec<Option<usize>> = vec![None; n];
+    for i in 0..n {
+        let v = after[i];
+        // Binary search for the first tail with after[tail] >= v.
+        let mut lo = 0usize;
+        let mut hi = tails.len();
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if after[tails[mid]] < v {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        if lo > 0 {
+            prev[i] = Some(tails[lo - 1]);
+        }
+        if lo == tails.len() {
+            tails.push(i);
+        } else {
+            tails[lo] = i;
+        }
+    }
+    // Reconstruct.
+    let mut result = Vec::with_capacity(tails.len());
+    let mut cursor = tails.last().copied();
+    while let Some(i) = cursor {
+        result.push(after[i]);
+        cursor = prev[i];
+    }
+    result.reverse();
+    result
 }
 
 fn time_ranges_equal(a: &TimeRange, b: &TimeRange) -> bool {

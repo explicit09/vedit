@@ -3,3 +3,8 @@
 Cargo.lock.bak
 .DS_Store
 .venv/
+
+# Local scratch — not project content
+/my_test/
+/v1.otio
+/v2.otio

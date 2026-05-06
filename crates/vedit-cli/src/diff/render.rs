@@ -2,10 +2,124 @@ use vedit_core::diff::{Change, ClipRef};
 use vedit_core::model::{RationalTime, TimeRange};
 
 pub fn render(changes: &[Change]) -> Vec<String> {
-    changes.iter().map(render_one).collect()
+    let collapsed = collapse_synced_pairs(changes);
+    collapsed.iter().map(|(c, synced)| render_one(c, *synced)).collect()
 }
 
-fn render_one(change: &Change) -> String {
+/// Detect video/audio mirror pairs and collapse them. Two changes are
+/// mirrors when their non-track content matches structurally (same op,
+/// same clip name, same numbers, etc.) and they live on different
+/// tracks. We keep the first occurrence and tag it `synced=true`.
+///
+/// JSON output sees the full uncollapsed list; this collapse only affects
+/// human prose.
+fn collapse_synced_pairs(changes: &[Change]) -> Vec<(Change, bool)> {
+    let mut out: Vec<(Change, bool)> = Vec::with_capacity(changes.len());
+    let mut consumed = vec![false; changes.len()];
+
+    for (i, c) in changes.iter().enumerate() {
+        if consumed[i] {
+            continue;
+        }
+        let mut synced = false;
+        for (j, other) in changes.iter().enumerate().skip(i + 1) {
+            if consumed[j] {
+                continue;
+            }
+            if mirrors(c, other) {
+                consumed[j] = true;
+                synced = true;
+                // Don't break — a track-add and another mirror could both
+                // collapse onto one entry, though in practice we'll only
+                // see one mirror per change.
+                break;
+            }
+        }
+        out.push((c.clone(), synced));
+    }
+    out
+}
+
+fn mirrors(a: &Change, b: &Change) -> bool {
+    use Change::*;
+    match (a, b) {
+        (
+            Trimmed { clip: ca, before: ba, after: aa, track: ta },
+            Trimmed { clip: cb, before: bb, after: ab, track: tb },
+        ) => ta != tb && ca.name == cb.name && ba == bb && aa == ab,
+        (
+            Moved { clip: ca, after_neighbor: na, before_neighbor: pa, .. },
+            Moved { clip: cb, after_neighbor: nb, before_neighbor: pb, .. },
+        ) => {
+            ca.name == cb.name
+                && neighbor_names_match(na, nb)
+                && neighbor_names_match(pa, pb)
+        }
+        (
+            Added { clip: ca, track: ta, .. },
+            Added { clip: cb, track: tb, .. },
+        ) => ta != tb && ca.name == cb.name,
+        (
+            Removed { clip: ca, track: ta, .. },
+            Removed { clip: cb, track: tb, .. },
+        ) => ta != tb && ca.name == cb.name,
+        (
+            EffectsChanged { clip: ca, before: ba, after: aa, track: ta },
+            EffectsChanged { clip: cb, before: bb, after: ab, track: tb },
+        ) => ta != tb && ca.name == cb.name && ba == bb && aa == ab,
+        (
+            TransitionAdded {
+                between_before: ba1,
+                between_after: ba2,
+                duration: da,
+                track: ta,
+                ..
+            },
+            TransitionAdded {
+                between_before: bb1,
+                between_after: bb2,
+                duration: db,
+                track: tb,
+                ..
+            },
+        ) => {
+            ta != tb
+                && neighbor_names_match(ba1, bb1)
+                && neighbor_names_match(ba2, bb2)
+                && da == db
+        }
+        (
+            TransitionRemoved {
+                between_before: ba1,
+                between_after: ba2,
+                track: ta,
+                ..
+            },
+            TransitionRemoved {
+                between_before: bb1,
+                between_after: bb2,
+                track: tb,
+                ..
+            },
+        ) => {
+            ta != tb
+                && neighbor_names_match(ba1, bb1)
+                && neighbor_names_match(ba2, bb2)
+        }
+        _ => false,
+    }
+}
+
+fn neighbor_names_match(a: &Option<ClipRef>, b: &Option<ClipRef>) -> bool {
+    match (a, b) {
+        (Some(x), Some(y)) => x.name == y.name,
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn render_one(change: &Change, synced: bool) -> String {
+    let suffix = if synced { " (with synced audio)" } else { "" };
     match change {
         Change::TrackAdded { name, kind } => {
             format!("  Added {} track \"{}\"", track_kind_word(kind), name)
@@ -13,71 +127,68 @@ fn render_one(change: &Change) -> String {
         Change::TrackRemoved { name, kind } => {
             format!("  Removed {} track \"{}\"", track_kind_word(kind), name)
         }
-        Change::Trimmed {
-            clip,
-            track: _,
-            before,
-            after,
-        } => render_trim(clip, before, after),
+        Change::Trimmed { clip, before, after, .. } => {
+            format!("{}{}", render_trim(clip, before, after), suffix)
+        }
         Change::Moved {
             clip,
-            from_track: _,
             from_index,
-            to_track: _,
             to_index,
             after_neighbor,
             before_neighbor,
-        } => render_move(clip, *from_index, *to_index, after_neighbor, before_neighbor),
-        Change::Added {
-            clip,
-            track,
-            index,
+            ..
         } => format!(
-            "  Added \"{}\" to {} at position {}",
+            "{}{}",
+            render_move(clip, *from_index, *to_index, after_neighbor, before_neighbor),
+            suffix
+        ),
+        Change::Added { clip, track, index } => format!(
+            "  Added \"{}\" to {} at position {}{}",
             clip_label(clip),
             track,
-            index
-        ),
-        Change::Removed {
-            clip,
-            track,
             index,
-        } => format!(
-            "  Removed \"{}\" from {} at position {}",
+            suffix
+        ),
+        Change::Removed { clip, track, index } => format!(
+            "  Removed \"{}\" from {} at position {}{}",
             clip_label(clip),
             track,
-            index
+            index,
+            suffix
         ),
-        Change::EffectsChanged {
-            clip,
-            track: _,
+        Change::EffectsChanged { clip, before, after, .. } => format!(
+            "  Effects on \"{}\" changed ({} → {}){}",
+            clip_label(clip),
             before,
             after,
-        } => format!(
-            "  Effects on \"{}\" changed ({} → {})",
-            clip_label(clip),
-            before,
-            after
+            suffix
         ),
-        Change::Replaced {
-            clip,
-            track: _,
-            before_media,
-            after_media,
-        } => render_replaced(clip, before_media, after_media),
+        Change::Replaced { clip, before_media, after_media, .. } => format!(
+            "{}{}",
+            render_replaced(clip, before_media, after_media),
+            suffix
+        ),
         Change::TransitionAdded {
-            track: _,
             between_before,
             between_after,
             name,
             duration,
-        } => render_transition_added(between_before, between_after, name, duration),
+            ..
+        } => format!(
+            "{}{}",
+            render_transition_added(between_before, between_after, name, duration),
+            suffix
+        ),
         Change::TransitionRemoved {
-            track: _,
             between_before,
             between_after,
             name,
-        } => render_transition_removed(between_before, between_after, name),
+            ..
+        } => format!(
+            "{}{}",
+            render_transition_removed(between_before, between_after, name),
+            suffix
+        ),
     }
 }
 
@@ -135,7 +246,6 @@ fn render_trim(clip: &ClipRef, before: &TimeRange, after: &TimeRange) -> String 
     let dur_delta_sec = after.duration.seconds() - before.duration.seconds();
 
     if in_delta_sec.abs() > 1e-6 && dur_delta_sec.abs() < 1e-6 {
-        // Pure shift in the source.
         return format!(
             "  Shifted \"{}\" source by {}",
             clip_label(clip),
