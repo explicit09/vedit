@@ -1,5 +1,12 @@
 [workspace]
 resolver = "3"
+# vedit-py is intentionally excluded from the default workspace because
+# pyo3's `extension-module` feature can't link in a plain `cargo build`
+# — it's built via maturin (`cd crates/vedit-py && maturin develop`).
+default-members = [
+    "crates/vedit-core",
+    "crates/vedit-cli",
+]
 members = [
     "crates/vedit-core",
     "crates/vedit-cli",

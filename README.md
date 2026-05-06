@@ -95,6 +95,18 @@ $ vedit log alt_cut
 91a7b03  Try a longer intro on alt_cut  (HEAD -> alt_cut)
 65b58e8  Add crossfade
 7af80fe  Initial cut
+
+# Or skip writing commit messages entirely. Auto-message from the diff:
+$ vedit commit timeline.otio
+[main 4758e4a] 5 edits: 1 trim, 1 move, 1 effect change, 1 transition added, 1 track added
+
+# Or run vedit watch to auto-commit whenever the file changes.
+# Configure your NLE to export OTIO to this path on a hotkey, and vedit
+# does the rest. See docs/RESOLVE.md for the Resolve setup.
+$ vedit watch timeline.otio
+Watching timeline.otio (interval 500ms, settle 200ms)
+[main f2d8815] trimmed "drone_shot_04" by 1.80s (in)
+[main a0c1d22] 3 edits: 1 trim, 1 move, 1 transition added
 ```
 
 ## Use from Python
@@ -146,9 +158,9 @@ The same engine drives the human-readable prose output. What an agent sees and w
 
 ## Status
 
-**v0.1 through v0.4 work.** `vedit diff` reads two OTIO files, matches clips by content fingerprint, and emits structured changes. `vedit init`/`commit`/`log`/`show`/`checkout` give you a real local repo. `vedit branch`/`branches` and `vedit checkout <branch>` give you divergent histories. Python bindings (`pip install vedit` once it's on PyPI) let agents `repo.commit(timeline_dict, message=...)` directly without temp files. **51 tests pass total** (43 Rust + 8 Python), including against real Resolve OTIO exports and the AcademySoftwareFoundation samples.
+**v0.1 through v0.5 work.** `vedit diff` reads two OTIO files, matches clips by content fingerprint, and emits structured changes. `vedit init`/`commit`/`log`/`show`/`checkout` give you a real local repo. `vedit branch`/`branches` and `vedit checkout <branch>` give you divergent histories. `vedit watch <timeline.otio>` auto-commits every time the file changes, with a commit message generated from the diff (`"5 edits: 2 trims, 1 move, 1 transition added"`). Python bindings let agents `repo.commit(timeline_dict, message=...)` directly without temp files. **59 tests pass** (51 Rust + 8 Python).
 
-What's not in yet: humans-in-NLE ergonomics (v0.5), merge (v0.6), remotes. Today vedit is a Rust library, a CLI, and a Python module. Wheels for PyPI come once the API stabilizes.
+What's not in yet: merge (v0.6), remotes. Today vedit is a Rust library, a CLI, and a Python module. Wheels for PyPI come once the API stabilizes.
 
 ## Roadmap
 
@@ -187,11 +199,12 @@ What's not in yet: humans-in-NLE ergonomics (v0.5), merge (v0.6), remotes. Today
 - Built with PyO3 + maturin; same Rust engine as the CLI
 - 8 Python integration tests covering init, commit, branch, diff, log, error paths
 
-**v0.5 — humans-in-NLEs ergonomics.**
-- `vedit watch <path>` polls a file and auto-commits on change
-- A small Resolve script that binds OTIO export to a hotkey
-- Auto-generated commit messages from the diff when `-m` is omitted
-- Aimed at editors who want vedit invisible in their workflow
+**v0.5 — humans-in-NLEs ergonomics** ✓ Done.
+- `vedit watch <path>` polls a file and auto-commits on change, with a settling window so half-written files don't get committed
+- `vedit commit` makes `-m` optional; messages auto-generate from the diff against HEAD
+- `--message-prefix` and `--once` flags on `watch` for scripted use
+- Documented Resolve setup at [`docs/RESOLVE.md`](docs/RESOLVE.md): one Python export script, one hotkey, one running `vedit watch` — and edits commit themselves
+- 4 integration tests covering auto-message generation across no-op, single-change, two-change, and many-change cases
 
 **v0.6 — merge.**
 - `vedit merge <branch>` with conflict surfacing

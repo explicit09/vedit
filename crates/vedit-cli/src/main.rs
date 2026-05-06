@@ -26,12 +26,16 @@ enum Cmd {
     /// Create a new vedit repository in the current directory.
     Init,
     /// Snapshot an OTIO file as a new commit on the current branch.
+    ///
+    /// If --message is omitted, a message is auto-generated from the diff
+    /// against HEAD ("Trimmed clip X by 1.8s" / "5 edits: 2 trims, 1 move,
+    /// ..."). Useful for unattended workflows like `vedit watch`.
     Commit {
         /// Path to the OTIO file to snapshot.
         timeline: PathBuf,
-        /// Commit message.
+        /// Commit message. Generated from the diff if omitted.
         #[arg(short, long)]
-        message: String,
+        message: Option<String>,
     },
     /// Walk commits from HEAD newest-first. Pass a ref to walk from there.
     Log {
@@ -68,6 +72,29 @@ enum Cmd {
     },
     /// List branches, marking the current one with `*`.
     Branches,
+    /// Watch an OTIO file and auto-commit on change.
+    ///
+    /// Polls the file's mtime + size, debounces with a settling window,
+    /// and runs `vedit commit` when the content actually changed. The
+    /// commit message is auto-generated from the diff against HEAD.
+    Watch {
+        /// Path to the OTIO file to watch.
+        timeline: PathBuf,
+        /// Polling interval in milliseconds. Default 500.
+        #[arg(long, default_value_t = 500)]
+        interval: u64,
+        /// How long the file must be unchanged (in ms) before we commit.
+        /// Guards against half-written files. Default 200.
+        #[arg(long, default_value_t = 200)]
+        settle: u64,
+        /// String to prepend to the auto-generated commit message.
+        #[arg(long)]
+        message_prefix: Option<String>,
+        /// Process exactly one change and exit. Useful for tests and
+        /// for triggering vedit from a Resolve hotkey.
+        #[arg(long)]
+        once: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -75,11 +102,26 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Diff { before, after, json } => diff::run(&before, &after, json),
         Cmd::Init => cmd::init::run(),
-        Cmd::Commit { timeline, message } => cmd::commit::run(&timeline, &message),
+        Cmd::Commit { timeline, message } => cmd::commit::run(&timeline, message.as_deref()),
         Cmd::Log { refstr } => cmd::log::run(&refstr),
         Cmd::Show { refstr } => cmd::show::run(&refstr),
         Cmd::Checkout { refstr, output } => cmd::checkout::run(&refstr, output.as_deref()),
         Cmd::Branch { name, delete } => cmd::branch::run(&name, delete),
         Cmd::Branches => cmd::branches::run(),
+        Cmd::Watch {
+            timeline,
+            interval,
+            settle,
+            message_prefix,
+            once,
+        } => cmd::watch::run(
+            &timeline,
+            cmd::watch::WatchOptions {
+                interval: std::time::Duration::from_millis(interval),
+                settle: std::time::Duration::from_millis(settle),
+                message_prefix,
+                once,
+            },
+        ),
     }
 }

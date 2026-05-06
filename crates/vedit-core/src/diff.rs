@@ -518,11 +518,167 @@ fn time_ranges_equal(a: &TimeRange, b: &TimeRange) -> bool {
     rational_eq(&a.start_time, &b.start_time) && rational_eq(&a.duration, &b.duration)
 }
 
+/// Render a list of changes as a one-line commit message. The shape:
+///
+/// - 0 changes  → `"No semantic changes"`
+/// - 1 change   → that change's verb phrase, e.g. `Trimmed "drone_shot_04" by 1.80s (in)`
+/// - 2 changes  → `"<verb 1>, <verb 2>"`
+/// - 3+ changes → `"5 edits: 2 trims, 1 move, 1 transition added, 1 effect change"`
+///
+/// `verb` here means a short label without quoted clip names, so the
+/// summary stays readable at high counts. The 1-change and 2-change
+/// branches keep the clip names because they're short enough to scan.
+pub fn auto_message(changes: &[Change]) -> String {
+    match changes.len() {
+        0 => "No semantic changes".to_string(),
+        1 => verb_phrase(&changes[0]),
+        2 => format!("{}, {}", verb_phrase(&changes[0]), verb_phrase(&changes[1])),
+        _ => summary_phrase(changes),
+    }
+}
+
+fn verb_phrase(change: &Change) -> String {
+    match change {
+        Change::TrackAdded { name, .. } => format!("added track \"{name}\""),
+        Change::TrackRemoved { name, .. } => format!("removed track \"{name}\""),
+        Change::Trimmed { clip, before, after, .. } => {
+            let in_delta = after.start_time.seconds() - before.start_time.seconds();
+            let dur_delta = after.duration.seconds() - before.duration.seconds();
+            let amount = if in_delta.abs() > 1e-6 {
+                in_delta.abs()
+            } else {
+                dur_delta.abs()
+            };
+            let dir = if in_delta > 1e-6 || dur_delta < -1e-6 {
+                "in"
+            } else {
+                "out"
+            };
+            format!("trimmed \"{}\" by {:.2}s ({dir})", clip.name, amount)
+        }
+        Change::Moved { clip, after_neighbor, before_neighbor, .. } => {
+            if let Some(n) = after_neighbor {
+                format!("moved \"{}\" before \"{}\"", clip.name, n.name)
+            } else if let Some(n) = before_neighbor {
+                format!("moved \"{}\" after \"{}\"", clip.name, n.name)
+            } else {
+                format!("moved \"{}\"", clip.name)
+            }
+        }
+        Change::Added { clip, .. } => format!("added \"{}\"", clip.name),
+        Change::Removed { clip, .. } => format!("removed \"{}\"", clip.name),
+        Change::EffectsChanged { clip, before, after, .. } => {
+            format!("effects on \"{}\" {}→{}", clip.name, before, after)
+        }
+        Change::Replaced { clip, .. } => format!("replaced media on \"{}\"", clip.name),
+        Change::TransitionAdded { name, .. } => {
+            if name.is_empty() {
+                "added transition".to_string()
+            } else {
+                format!("added {name}")
+            }
+        }
+        Change::TransitionRemoved { name, .. } => {
+            if name.is_empty() {
+                "removed transition".to_string()
+            } else {
+                format!("removed {name}")
+            }
+        }
+    }
+}
+
+fn summary_phrase(changes: &[Change]) -> String {
+    let mut trims = 0u32;
+    let mut moves = 0u32;
+    let mut adds = 0u32;
+    let mut removes = 0u32;
+    let mut replaces = 0u32;
+    let mut effects = 0u32;
+    let mut transitions_added = 0u32;
+    let mut transitions_removed = 0u32;
+    let mut tracks_added = 0u32;
+    let mut tracks_removed = 0u32;
+
+    for c in changes {
+        match c {
+            Change::Trimmed { .. } => trims += 1,
+            Change::Moved { .. } => moves += 1,
+            Change::Added { .. } => adds += 1,
+            Change::Removed { .. } => removes += 1,
+            Change::Replaced { .. } => replaces += 1,
+            Change::EffectsChanged { .. } => effects += 1,
+            Change::TransitionAdded { .. } => transitions_added += 1,
+            Change::TransitionRemoved { .. } => transitions_removed += 1,
+            Change::TrackAdded { .. } => tracks_added += 1,
+            Change::TrackRemoved { .. } => tracks_removed += 1,
+        }
+    }
+
+    let mut parts: Vec<String> = Vec::new();
+    let push = |parts: &mut Vec<String>, n: u32, singular: &str, plural: &str| {
+        if n > 0 {
+            let label = if n == 1 { singular } else { plural };
+            parts.push(format!("{n} {label}"));
+        }
+    };
+    push(&mut parts, trims, "trim", "trims");
+    push(&mut parts, moves, "move", "moves");
+    push(&mut parts, adds, "addition", "additions");
+    push(&mut parts, removes, "removal", "removals");
+    push(&mut parts, replaces, "replacement", "replacements");
+    push(&mut parts, effects, "effect change", "effect changes");
+    push(&mut parts, transitions_added, "transition added", "transitions added");
+    push(&mut parts, transitions_removed, "transition removed", "transitions removed");
+    push(&mut parts, tracks_added, "track added", "tracks added");
+    push(&mut parts, tracks_removed, "track removed", "tracks removed");
+
+    let total = changes.len();
+    let edits_word = if total == 1 { "edit" } else { "edits" };
+    format!("{total} {edits_word}: {}", parts.join(", "))
+}
+
 fn rational_eq(a: &RationalTime, b: &RationalTime) -> bool {
     if (a.rate - b.rate).abs() < f64::EPSILON {
         (a.value - b.value).abs() < 1e-6
     } else {
         // Compare in seconds when rates differ.
         (a.seconds() - b.seconds()).abs() < 1e-6
+    }
+}
+
+#[cfg(test)]
+mod auto_message_tests {
+    use super::*;
+    use crate::model::TrackKind;
+
+    fn tr_added(name: &str) -> Change {
+        Change::TrackAdded {
+            name: name.to_string(),
+            kind: TrackKind::Audio,
+        }
+    }
+
+    #[test]
+    fn no_changes() {
+        assert_eq!(auto_message(&[]), "No semantic changes");
+    }
+
+    #[test]
+    fn one_change_uses_verb_phrase() {
+        let m = auto_message(&[tr_added("A1")]);
+        assert_eq!(m, "added track \"A1\"");
+    }
+
+    #[test]
+    fn two_changes_joined_with_comma() {
+        let m = auto_message(&[tr_added("V2"), tr_added("A1")]);
+        assert_eq!(m, "added track \"V2\", added track \"A1\"");
+    }
+
+    #[test]
+    fn three_changes_summarized() {
+        let m = auto_message(&[tr_added("V2"), tr_added("A1"), tr_added("A2")]);
+        assert_eq!(m, "3 edits: 3 tracks added");
     }
 }
