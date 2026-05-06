@@ -1,0 +1,18 @@
+[package]
+name = "vedit-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Command-line interface for vedit."
+
+[[bin]]
+name = "vedit"
+path = "src/main.rs"
+
+[dependencies]
+vedit-core = { path = "../vedit-core" }
+clap = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }

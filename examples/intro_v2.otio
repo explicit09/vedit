@@ -1,0 +1,93 @@
+{
+  "OTIO_SCHEMA": "Timeline.1",
+  "name": "intro",
+  "tracks": {
+    "OTIO_SCHEMA": "Stack.1",
+    "name": "tracks",
+    "children": [
+      {
+        "OTIO_SCHEMA": "Track.1",
+        "name": "V1",
+        "kind": "Video",
+        "children": [
+          {
+            "OTIO_SCHEMA": "Clip.2",
+            "name": "title_card",
+            "source_range": {
+              "OTIO_SCHEMA": "TimeRange.1",
+              "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0.0, "rate": 24.0 },
+              "duration":   { "OTIO_SCHEMA": "RationalTime.1", "value": 48.0, "rate": 24.0 }
+            },
+            "media_reference": { "OTIO_SCHEMA": "ExternalReference.1", "target_url": "media://title.mov" },
+            "effects": [],
+            "metadata": {}
+          },
+          {
+            "OTIO_SCHEMA": "Transition.1",
+            "name": "crossfade",
+            "in_offset":  { "OTIO_SCHEMA": "RationalTime.1", "value": 6.0, "rate": 24.0 },
+            "out_offset": { "OTIO_SCHEMA": "RationalTime.1", "value": 6.0, "rate": 24.0 },
+            "metadata": {}
+          },
+          {
+            "OTIO_SCHEMA": "Clip.2",
+            "name": "drone_shot_04",
+            "source_range": {
+              "OTIO_SCHEMA": "TimeRange.1",
+              "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0.0, "rate": 24.0 },
+              "duration":   { "OTIO_SCHEMA": "RationalTime.1", "value": 76.8, "rate": 24.0 }
+            },
+            "media_reference": { "OTIO_SCHEMA": "ExternalReference.1", "target_url": "media://drone_04.mov" },
+            "effects": [],
+            "metadata": {}
+          },
+          {
+            "OTIO_SCHEMA": "Clip.2",
+            "name": "b_roll_03",
+            "source_range": {
+              "OTIO_SCHEMA": "TimeRange.1",
+              "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0.0, "rate": 24.0 },
+              "duration":   { "OTIO_SCHEMA": "RationalTime.1", "value": 96.0, "rate": 24.0 }
+            },
+            "media_reference": { "OTIO_SCHEMA": "ExternalReference.1", "target_url": "media://broll_03.mov" },
+            "effects": [],
+            "metadata": {}
+          },
+          {
+            "OTIO_SCHEMA": "Clip.2",
+            "name": "interview_take_2",
+            "source_range": {
+              "OTIO_SCHEMA": "TimeRange.1",
+              "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0.0, "rate": 24.0 },
+              "duration":   { "OTIO_SCHEMA": "RationalTime.1", "value": 240.0, "rate": 24.0 }
+            },
+            "media_reference": { "OTIO_SCHEMA": "ExternalReference.1", "target_url": "media://interview_2.mov" },
+            "effects": [
+              { "OTIO_SCHEMA": "Effect.1", "name": "color_correct", "metadata": {} }
+            ],
+            "metadata": {}
+          }
+        ]
+      },
+      {
+        "OTIO_SCHEMA": "Track.1",
+        "name": "A1",
+        "kind": "Audio",
+        "children": [
+          {
+            "OTIO_SCHEMA": "Clip.2",
+            "name": "voiceover_master",
+            "source_range": {
+              "OTIO_SCHEMA": "TimeRange.1",
+              "start_time": { "OTIO_SCHEMA": "RationalTime.1", "value": 0.0, "rate": 24.0 },
+              "duration":   { "OTIO_SCHEMA": "RationalTime.1", "value": 480.0, "rate": 24.0 }
+            },
+            "media_reference": { "OTIO_SCHEMA": "ExternalReference.1", "target_url": "media://vo_master.wav" },
+            "effects": [],
+            "metadata": {}
+          }
+        ]
+      }
+    ]
+  }
+}
