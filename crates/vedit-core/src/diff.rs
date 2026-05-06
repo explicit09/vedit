@@ -63,6 +63,15 @@ pub enum Change {
         before: usize,
         after: usize,
     },
+    /// A clip kept its name and position but its media reference changed.
+    /// This is the "I dropped a different take onto the same clip slot"
+    /// case. Treated as one logical change, not as remove + add.
+    Replaced {
+        clip: ClipRef,
+        track: String,
+        before_media: Option<String>,
+        after_media: Option<String>,
+    },
     /// Transition appeared between two adjacent matched clips.
     TransitionAdded {
         track: String,
@@ -280,6 +289,16 @@ fn diff_track(before: &Track, after: &Track, out: &mut Vec<Change>) {
                 track: track_name.clone(),
                 before: b_clip.effect_count,
                 after: a_clip.effect_count,
+            });
+        }
+
+        // Media replacement: same name (weak match), different URL.
+        if b_clip.media_reference != a_clip.media_reference {
+            out.push(Change::Replaced {
+                clip: a_clip.into(),
+                track: track_name.clone(),
+                before_media: b_clip.media_reference.clone(),
+                after_media: a_clip.media_reference.clone(),
             });
         }
     }

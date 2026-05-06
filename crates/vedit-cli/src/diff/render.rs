@@ -59,6 +59,12 @@ fn render_one(change: &Change) -> String {
             before,
             after
         ),
+        Change::Replaced {
+            clip,
+            track: _,
+            before_media,
+            after_media,
+        } => render_replaced(clip, before_media, after_media),
         Change::TransitionAdded {
             track: _,
             between_before,
@@ -73,6 +79,26 @@ fn render_one(change: &Change) -> String {
             name,
         } => render_transition_removed(between_before, between_after, name),
     }
+}
+
+fn render_replaced(
+    clip: &ClipRef,
+    before_media: &Option<String>,
+    after_media: &Option<String>,
+) -> String {
+    match (before_media, after_media) {
+        (Some(b), Some(a)) => format!(
+            "  Replaced media on \"{}\" ({} → {})",
+            clip_label(clip),
+            short_media(b),
+            short_media(a)
+        ),
+        _ => format!("  Replaced media on \"{}\"", clip_label(clip)),
+    }
+}
+
+fn short_media(url: &str) -> &str {
+    url.rsplit('/').next().unwrap_or(url)
 }
 
 fn render_move(

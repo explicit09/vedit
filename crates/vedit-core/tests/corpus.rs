@@ -253,18 +253,9 @@ fn case_05_clip_removed() {
 
 #[test]
 fn case_06_clip_replaced() {
-    // Same name and position, different media. A replacement should appear
-    // as one Removed (old media) + one Added (new media), because the
-    // strong fingerprint (media url) differs and weak fingerprint matches
-    // by name — so weak match would treat them as the same clip with no
-    // visible change. We expect the matcher to weak-match by name and
-    // emit no diff (since name matched). That's actually wrong for this
-    // case — replaced media is a meaningful change.
-    //
-    // For now: assert the documented behaviour. If the matcher weak-matches
-    // by name, the test asserts no changes; we'll later add a "media
-    // replaced" change variant. This test exists to lock in current
-    // behaviour and surface the limitation.
+    // Same name and position, different media URL. The matcher should
+    // weak-match by name and then emit a Replaced change to surface the
+    // media swap.
     let before = timeline(
         "doc",
         vec![track(
@@ -282,12 +273,19 @@ fn case_06_clip_replaced() {
         )],
     );
     let changes = run_diff(before, after);
-    // Current behaviour: weak match by name, no diff. Documented limitation.
-    assert!(
-        changes.iter().all(|c| !matches!(c, Change::Trimmed { .. })),
-        "{:#?}",
-        changes
-    );
+    let replaced: Vec<_> = changes
+        .iter()
+        .filter(|c| matches!(c, Change::Replaced { .. }))
+        .collect();
+    assert_eq!(replaced.len(), 1, "{:#?}", changes);
+    match replaced[0] {
+        Change::Replaced { clip, before_media, after_media, .. } => {
+            assert_eq!(clip.name, "intro");
+            assert_eq!(before_media.as_deref(), Some("media://intro_v1.mov"));
+            assert_eq!(after_media.as_deref(), Some("media://intro_v2.mov"));
+        }
+        _ => unreachable!(),
+    }
 }
 
 #[test]
