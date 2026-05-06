@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/vedit-core",
     "crates/vedit-cli",
+    "crates/vedit-py",
 ]
 
 [workspace.package]

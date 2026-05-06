@@ -29,7 +29,9 @@ It works on [OpenTimelineIO](https://github.com/AcademySoftwareFoundation/OpenTi
 
 vedit is editor-agnostic. It does not replace your NLE. It sits next to it, the way git sits next to your text editor.
 
-Built for AI agents that edit video, the developers building them, and human editors who want to know what changed.
+Built for AI agents that edit video, the developers building them, and human editors who want real version history beyond what their NLE's undo stack can give them. Cmd-Z is fine until you close the project.
+
+The agent audience comes first. AI video tools today have no shared infrastructure for snapshot, branch, and diff — every team rolls their own. vedit is that layer.
 
 ## Quickstart
 
@@ -95,17 +97,58 @@ $ vedit log alt_cut
 7af80fe  Initial cut
 ```
 
+## Use from Python
+
+The agent surface. No CLI, no temp files. Pass OTIO timelines as Python dicts straight from your tool.
+
+```python
+import vedit
+
+repo = vedit.Repo.init("./project")          # or .open(path), or .discover()
+
+# Agent generates a timeline as an OTIO dict.
+timeline = my_agent.generate(prompt="opening montage, fast cuts")
+h0 = repo.commit(timeline, message="agent v0")
+
+# Branch off and try a different approach.
+repo.create_branch("alt", at="HEAD")
+repo.switch_branch("alt")
+alt_timeline = my_agent.generate(prompt="opening montage, slower")
+h1 = repo.commit(alt_timeline, message="agent v0 — slower")
+
+# What did the agent change between the two?
+for change in repo.diff_refs("main", "alt"):
+    print(change.op, change.to_dict())
+# trimmed {'clip': {'name': 'shot_03', ...}, 'before': {...}, 'after': {...}}
+# added {'clip': {'name': 'reaction_take_2', ...}, ...}
+
+# Or diff two timelines directly without committing them.
+changes = vedit.diff(timeline_a, timeline_b)
+```
+
+`vedit-py` is built on the same Rust engine as the CLI; what an agent sees through the library and what a human sees through `vedit show HEAD` are projections of the same truth.
+
+Build locally for now (PyPI wheel coming):
+
+```
+git clone https://github.com/explicit09/vedit.git && cd vedit
+python3 -m venv .venv && source .venv/bin/activate
+pip install maturin
+cd crates/vedit-py && maturin develop --release
+python -c "import vedit; print(vedit)"
+```
+
 ## Built for AI agents
 
-The `--json` output is the primary surface for programmatic consumers. Each change is a tagged enum variant with structured data: `trimmed`, `moved`, `added`, `removed`, `replaced`, `effects_changed`, `transition_added`, `transition_removed`, `track_added`, `track_removed`. Agents can branch on `op`, read clip identity from `clip.name` and `clip.media_reference`, and act on the deltas without ever parsing the OTIO files themselves.
+The `--json` output and the Python `Change` objects are the primary surface for programmatic consumers. Each change is a tagged variant with structured data: `trimmed`, `moved`, `added`, `removed`, `replaced`, `effects_changed`, `transition_added`, `transition_removed`, `track_added`, `track_removed`. Agents branch on `op`, read clip identity from `clip.name` and `clip.media_reference`, and act on deltas without ever parsing OTIO themselves.
 
-The same engine powers the prose output, so what an agent sees and what a human sees are projections of the same truth.
+The same engine drives the human-readable prose output. What an agent sees and what a human sees are projections of the same truth.
 
 ## Status
 
-**v0.1 + v0.2 + v0.3 work.** `vedit diff` reads two OTIO files, matches clips by content fingerprint, and emits structured changes. `vedit init`/`commit`/`log`/`show`/`checkout` give you a real local repo. `vedit branch`/`branches` and `vedit checkout <branch>` give you divergent histories — alternate cuts, director's vs client cuts, branch-per-experiment. 43 tests pass, including against real Resolve OTIO exports and the AcademySoftwareFoundation samples.
+**v0.1 through v0.4 work.** `vedit diff` reads two OTIO files, matches clips by content fingerprint, and emits structured changes. `vedit init`/`commit`/`log`/`show`/`checkout` give you a real local repo. `vedit branch`/`branches` and `vedit checkout <branch>` give you divergent histories. Python bindings (`pip install vedit` once it's on PyPI) let agents `repo.commit(timeline_dict, message=...)` directly without temp files. **51 tests pass total** (43 Rust + 8 Python), including against real Resolve OTIO exports and the AcademySoftwareFoundation samples.
 
-What's not in yet: merge, remotes. Those land in v0.4 and beyond.
+What's not in yet: humans-in-NLE ergonomics (v0.5), merge (v0.6), remotes. Today vedit is a Rust library, a CLI, and a Python module. Wheels for PyPI come once the API stabilizes.
 
 ## Roadmap
 
@@ -133,7 +176,24 @@ What's not in yet: merge, remotes. Those land in v0.4 and beyond.
 - `vedit log <ref>` walks history from any branch or commit
 - 8 unit and integration tests covering branch creation, deletion, switching, divergence, and validation
 
-**v0.4 — merge.**
+**v0.4 — Python bindings** ✓ Done.
+- `vedit.Repo.init(path)`, `Repo.open(path)`, `Repo.discover()`
+- `repo.commit(timeline_dict, message=...)` — OTIO as a Python dict, no temp file
+- `vedit.diff(before_dict, after_dict)` — return `Change` objects directly
+- `repo.diff_refs("main", "alt")` — diff between any two refs
+- `repo.create_branch`, `switch_branch`, `delete_branch`, `list_branches`, `current_branch`
+- `repo.log()`, `repo.read_timeline(ref)`, `repo.read_commit(ref)`, `repo.resolve(ref)`
+- `vedit.VeditError` for all errors from the core
+- Built with PyO3 + maturin; same Rust engine as the CLI
+- 8 Python integration tests covering init, commit, branch, diff, log, error paths
+
+**v0.5 — humans-in-NLEs ergonomics.**
+- `vedit watch <path>` polls a file and auto-commits on change
+- A small Resolve script that binds OTIO export to a hotkey
+- Auto-generated commit messages from the diff when `-m` is omitted
+- Aimed at editors who want vedit invisible in their workflow
+
+**v0.6 — merge.**
 - `vedit merge <branch>` with conflict surfacing
 - Non-overlapping edits auto-merge; overlapping edits fail loudly with a structured conflict report
 
@@ -144,7 +204,7 @@ $ vedit merge trailer_cut social_cut
   Auto-merged: 7 non-overlapping edits
 ```
 
-**Later** — editor adapters, visual diff reports, remotes, language bindings (Python, Node).
+**Later** — Node bindings, remotes, editor-specific adapters.
 
 ## Why this is hard
 

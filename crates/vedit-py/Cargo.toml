@@ -1,0 +1,20 @@
+[package]
+name = "vedit-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Python bindings for vedit — version control for video timelines."
+
+[lib]
+name = "vedit"
+crate-type = ["cdylib"]
+
+[dependencies]
+vedit-core = { path = "../vedit-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+pyo3 = { version = "0.26", features = ["extension-module", "anyhow"] }
+pythonize = "0.26"

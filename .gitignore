@@ -4,6 +4,13 @@ Cargo.lock.bak
 .DS_Store
 .venv/
 
+# Python build artifacts
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/dist/
+**/*.egg-info/
+
 # Local scratch — not project content
 /my_test/
 /v1.otio
