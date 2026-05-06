@@ -2,10 +2,11 @@ use anyhow::Result;
 use vedit_core::object;
 use vedit_core::repo::{HeadState, Repo};
 
-pub fn run() -> Result<()> {
+pub fn run(refstr: &str) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let repo = Repo::discover(&cwd)?;
-    let entries = repo.log(None)?;
+    let start = if refstr == "HEAD" { None } else { Some(refstr) };
+    let entries = repo.log(start)?;
 
     if entries.is_empty() {
         println!("No commits yet. Run `vedit commit <timeline.otio> -m \"...\"` to start.");

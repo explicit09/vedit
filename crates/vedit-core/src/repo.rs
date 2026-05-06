@@ -101,6 +101,80 @@ impl Repo {
         Ok(Some(trimmed.to_string()))
     }
 
+    /// List existing branches (sorted alphabetically). Each entry has the
+    /// branch name and the commit it points at.
+    pub fn list_branches(&self) -> Result<Vec<(String, String)>> {
+        let dir = self.root.join("refs").join("heads");
+        let mut out: Vec<(String, String)> = Vec::new();
+        if !dir.exists() {
+            return Ok(out);
+        }
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            // We only support flat names in v0.3 — no nested
+            // refs/heads/<a>/<b>. Skip subdirs for now.
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Some(target) = self.branch_target(&name)? {
+                out.push((name, target));
+            }
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(out)
+    }
+
+    /// Return the current branch name if HEAD is symbolic, else None.
+    pub fn current_branch(&self) -> Result<Option<String>> {
+        match self.head()? {
+            HeadState::Branch(name) => Ok(Some(name)),
+            HeadState::Detached(_) => Ok(None),
+        }
+    }
+
+    /// Create a new branch pointing at the resolved `start_ref`. Errors if
+    /// the branch already exists or the name is invalid.
+    pub fn create_branch(&self, name: &str, start_ref: &str) -> Result<String> {
+        validate_branch_name(name)?;
+        let path = self.branch_path(name);
+        if path.exists() {
+            bail!("branch {name} already exists");
+        }
+        let target = self.resolve(start_ref)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, format!("{target}\n"))?;
+        Ok(target)
+    }
+
+    /// Delete a branch. Refuses to delete the branch HEAD currently points
+    /// at, since there'd be no way to keep working.
+    pub fn delete_branch(&self, name: &str) -> Result<()> {
+        if self.current_branch()?.as_deref() == Some(name) {
+            bail!("cannot delete the current branch ({name}); switch first");
+        }
+        let path = self.branch_path(name);
+        if !path.exists() {
+            bail!("branch {name} does not exist");
+        }
+        std::fs::remove_file(&path)
+            .with_context(|| format!("removing {}", path.display()))?;
+        Ok(())
+    }
+
+    /// Repoint HEAD at an existing branch. Use this for `vedit checkout
+    /// <branch>`. Errors if the branch does not exist.
+    pub fn switch_branch(&self, name: &str) -> Result<()> {
+        let path = self.branch_path(name);
+        if !path.exists() {
+            bail!("branch {name} does not exist");
+        }
+        std::fs::write(self.head_path(), format!("ref: refs/heads/{name}\n"))?;
+        Ok(())
+    }
+
     /// Resolve a user-supplied ref string to a full commit hash.
     /// Accepts: "HEAD", branch name, full hash (with or without prefix),
     /// short hash (>=4 hex chars).
@@ -262,6 +336,29 @@ pub enum HeadState {
     Detached(String),
 }
 
+/// Branch names are restricted to ASCII alphanumerics, dash, underscore,
+/// and slash. Empty names, names with whitespace, leading dot, or `..`
+/// segments are rejected. Slashes are allowed but the v0.3 listing only
+/// covers flat names.
+fn validate_branch_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        bail!("branch name is empty");
+    }
+    if name.starts_with('.') || name.starts_with('/') || name.ends_with('/') {
+        bail!("invalid branch name: {name}");
+    }
+    if name.contains("..") || name.contains("//") {
+        bail!("invalid branch name: {name}");
+    }
+    for ch in name.chars() {
+        let ok = ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '/' | '.');
+        if !ok || ch.is_whitespace() {
+            bail!("invalid branch name: {name}");
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,5 +473,102 @@ mod tests {
         let body = c.strip_prefix(object::HASH_PREFIX).unwrap();
         let short = &body[..10];
         assert_eq!(repo.resolve(short).unwrap(), c);
+    }
+
+    #[test]
+    fn create_branch_at_head_then_switch() {
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
+            .unwrap();
+        let c = repo.commit(&t, fake_author(), "v").unwrap();
+
+        repo.create_branch("alt", "HEAD").unwrap();
+        assert_eq!(repo.branch_target("alt").unwrap().as_deref(), Some(c.as_str()));
+
+        // List shows both.
+        let list = repo.list_branches().unwrap();
+        assert_eq!(list.len(), 2);
+        assert!(list.iter().any(|(n, _)| n == "main"));
+        assert!(list.iter().any(|(n, _)| n == "alt"));
+
+        // Switch and verify.
+        assert_eq!(repo.current_branch().unwrap().as_deref(), Some("main"));
+        repo.switch_branch("alt").unwrap();
+        assert_eq!(repo.current_branch().unwrap().as_deref(), Some("alt"));
+    }
+
+    #[test]
+    fn cannot_create_existing_branch() {
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
+            .unwrap();
+        repo.commit(&t, fake_author(), "v").unwrap();
+        repo.create_branch("alt", "HEAD").unwrap();
+        assert!(repo.create_branch("alt", "HEAD").is_err());
+    }
+
+    #[test]
+    fn cannot_delete_current_branch() {
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
+            .unwrap();
+        repo.commit(&t, fake_author(), "v").unwrap();
+        // main is current; deleting it must error.
+        assert!(repo.delete_branch("main").is_err());
+
+        // alt is not current; deleting it works.
+        repo.create_branch("alt", "HEAD").unwrap();
+        repo.delete_branch("alt").unwrap();
+        assert!(repo.branch_target("alt").unwrap().is_none());
+    }
+
+    #[test]
+    fn switch_then_commit_advances_only_that_branch() {
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t1 = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v1" }))
+            .unwrap();
+        let main_c1 = repo.commit(&t1, fake_author(), "v1 on main").unwrap();
+
+        repo.create_branch("alt", "HEAD").unwrap();
+        repo.switch_branch("alt").unwrap();
+
+        let t2 = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v2" }))
+            .unwrap();
+        let alt_c2 = repo.commit(&t2, fake_author(), "v2 on alt").unwrap();
+
+        // main still at v1; alt now at v2.
+        assert_eq!(repo.branch_target("main").unwrap().as_deref(), Some(main_c1.as_str()));
+        assert_eq!(repo.branch_target("alt").unwrap().as_deref(), Some(alt_c2.as_str()));
+
+        // Logs differ.
+        let main_log = repo.log(Some("main")).unwrap();
+        let alt_log = repo.log(Some("alt")).unwrap();
+        assert_eq!(main_log.len(), 1);
+        assert_eq!(alt_log.len(), 2);
+    }
+
+    #[test]
+    fn invalid_branch_names_rejected() {
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
+            .unwrap();
+        repo.commit(&t, fake_author(), "v").unwrap();
+        for bad in ["", ".hidden", "with space", "../escape", "trailing/", "//double"] {
+            assert!(
+                repo.create_branch(bad, "HEAD").is_err(),
+                "should reject {bad:?}"
+            );
+        }
     }
 }

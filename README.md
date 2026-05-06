@@ -74,6 +74,25 @@ Date:   2026-05-06T09:18:23Z
   Added crossfade between "title_card" and "drone_shot_04" (12 frames)
 $ vedit checkout 7af80fe -o earlier.otio
 Wrote timeline at 7af80fe to earlier.otio
+
+# Branch off to try an alternate cut.
+$ vedit branch alt_cut
+Created branch alt_cut at 65b58e8
+$ vedit checkout alt_cut
+Switched to branch alt_cut
+$ # ...edit timeline.otio differently in your NLE, re-export...
+$ vedit commit timeline.otio -m "Try a longer intro on alt_cut"
+[alt_cut 91a7b03] Try a longer intro on alt_cut
+$ vedit branches
+* alt_cut  91a7b03
+  main     65b58e8
+$ vedit log main
+65b58e8  Add crossfade
+7af80fe  Initial cut
+$ vedit log alt_cut
+91a7b03  Try a longer intro on alt_cut  (HEAD -> alt_cut)
+65b58e8  Add crossfade
+7af80fe  Initial cut
 ```
 
 ## Built for AI agents
@@ -84,9 +103,9 @@ The same engine powers the prose output, so what an agent sees and what a human 
 
 ## Status
 
-**v0.1 + v0.2 work.** `vedit diff` reads two OTIO files, matches clips by content fingerprint, and emits structured changes. `vedit init`/`commit`/`log`/`show`/`checkout` give you a real local repo with a content-addressed object store. 35 tests pass, including against the AcademySoftwareFoundation OTIO samples (`multitrack`, `transition`, `effects`, `nested_example`, `premiere_example`, `screening_example`, `generator_reference_test`).
+**v0.1 + v0.2 + v0.3 work.** `vedit diff` reads two OTIO files, matches clips by content fingerprint, and emits structured changes. `vedit init`/`commit`/`log`/`show`/`checkout` give you a real local repo. `vedit branch`/`branches` and `vedit checkout <branch>` give you divergent histories — alternate cuts, director's vs client cuts, branch-per-experiment. 43 tests pass, including against real Resolve OTIO exports and the AcademySoftwareFoundation samples.
 
-What's not in yet: branches beyond `main`, merge, remotes. Those land in v0.3 and v0.4.
+What's not in yet: merge, remotes. Those land in v0.4 and beyond.
 
 ## Roadmap
 
@@ -106,9 +125,13 @@ What's not in yet: branches beyond `main`, merge, remotes. Those land in v0.3 an
 - Author info auto-resolved from `VEDIT_AUTHOR_*` env vars or `git config`
 - 23 unit and integration tests covering the storage, ref resolution, and full workflow
 
-**v0.3 — branches.**
-- `vedit branch <name>`, `vedit checkout` switching branches, `vedit branches` listing
-- Diff and log work across branches
+**v0.3 — branches** ✓ Done.
+- `vedit branch <name>` creates a branch at HEAD; `vedit branch -d <name>` deletes
+- `vedit branches` lists branches, marking the current one
+- `vedit checkout <branch>` switches HEAD to a branch (no working copy — branches diverge in the object store)
+- `vedit checkout <ref> -o <path>` still writes a timeline to disk (existing flow)
+- `vedit log <ref>` walks history from any branch or commit
+- 8 unit and integration tests covering branch creation, deletion, switching, divergence, and validation
 
 **v0.4 — merge.**
 - `vedit merge <branch>` with conflict surfacing
