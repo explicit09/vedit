@@ -36,28 +36,44 @@ Built for AI agents that edit video, the developers building them, and human edi
 ```
 $ git clone https://github.com/explicit09/vedit.git && cd vedit
 $ cargo build --release
+$ alias vedit="$PWD/target/release/vedit"
 
-$ ./target/release/vedit diff examples/intro_v1.otio examples/intro_v2.otio
+# Show what changed between two timelines, no repo required.
+$ vedit diff examples/intro_v1.otio examples/intro_v2.otio
   Moved "b_roll_03" before "interview_take_2"
   Effects on "interview_take_2" changed (0 → 1)
   Trimmed "drone_shot_04" by 1.80s (in)
   Added crossfade between "title_card" and "drone_shot_04" (12 frames)
   Added audio track "A1"
 
-$ ./target/release/vedit diff examples/intro_v1.otio examples/intro_v2.otio --json
-[
-  {
-    "op": "moved",
-    "clip": { "name": "b_roll_03", "media_reference": "media://broll_03.mov" },
-    "from_track": "V1",
-    "from_index": 3,
-    "to_track": "V1",
-    "to_index": 2,
-    "after_neighbor": { "name": "interview_take_2", ... },
-    ...
-  },
-  ...
-]
+# Same engine, machine-readable output for AI agents.
+$ vedit diff examples/intro_v1.otio examples/intro_v2.otio --json
+[ { "op": "moved", "clip": { "name": "b_roll_03", ... }, ... }, ... ]
+
+# Initialize a repo, snapshot a timeline, walk history.
+$ mkdir my_project && cd my_project
+$ cp /path/to/timeline.otio .
+$ vedit init
+Initialized empty vedit repository in /path/to/my_project/.vedit
+$ vedit commit timeline.otio -m "Initial cut"
+[main (root) 7af80fe] Initial cut
+$ # ...edit timeline.otio in your NLE, export OTIO again...
+$ vedit commit timeline.otio -m "Add crossfade"
+[main 65b58e8] Add crossfade
+$ vedit log
+65b58e8  Add crossfade  (HEAD -> main)
+7af80fe  Initial cut
+$ vedit show HEAD
+commit 65b58e8
+Author: ...
+Date:   2026-05-06T09:18:23Z
+
+    Add crossfade
+
+  Trimmed "drone_shot_04" by 1.80s (in)
+  Added crossfade between "title_card" and "drone_shot_04" (12 frames)
+$ vedit checkout 7af80fe -o earlier.otio
+Wrote timeline at 7af80fe to earlier.otio
 ```
 
 ## Built for AI agents
@@ -68,9 +84,9 @@ The same engine powers the prose output, so what an agent sees and what a human 
 
 ## Status
 
-**v0.1 works.** `vedit diff` reads two OTIO files, matches clips by content fingerprint, and emits structured changes covering trim, move, add, remove, replace, effects, transitions, and tracks. 12 corpus tests pass. Tested against the AcademySoftwareFoundation OTIO sample files (`multitrack`, `transition`, `effects`, `nested_example`, `premiere_example`, `screening_example`, `generator_reference_test`).
+**v0.1 + v0.2 work.** `vedit diff` reads two OTIO files, matches clips by content fingerprint, and emits structured changes. `vedit init`/`commit`/`log`/`show`/`checkout` give you a real local repo with a content-addressed object store. 35 tests pass, including against the AcademySoftwareFoundation OTIO samples (`multitrack`, `transition`, `effects`, `nested_example`, `premiere_example`, `screening_example`, `generator_reference_test`).
 
-What's not in v0.1: a repo or object store, branches, commits, merge. Those land in v0.2–v0.4. The diff engine is the foundation everything else runs on.
+What's not in yet: branches beyond `main`, merge, remotes. Those land in v0.3 and v0.4.
 
 ## Roadmap
 
@@ -80,13 +96,18 @@ What's not in v0.1: a repo or object store, branches, commits, merge. Those land
 - Detects trim, move, add, remove, replace, effects, transitions, tracks
 - 12 corpus tests, validated against real-world OTIO samples
 
-**v0.2 — local repo and snapshots.**
-- `vedit init` creates a `.vedit/` content-addressed object store
-- `vedit commit` snapshots a timeline; `vedit log` shows history; `vedit show` renders a single commit's diff
-- Media files are hashed by reference, not stored
+**v0.2 — local repo and snapshots** ✓ Done.
+- `vedit init` creates a `.vedit/` content-addressed object store (gzipped JSON, SHA-256, canonical key ordering)
+- `vedit commit <timeline.otio> -m "msg"` snapshots and advances `main`
+- `vedit log` walks history newest-first
+- `vedit show <ref>` renders a commit's diff against its parent
+- `vedit checkout <ref> -o <path>` writes the timeline at any commit back to disk
+- Media files are referenced by URL, never stored — vedit is not a media manager
+- Author info auto-resolved from `VEDIT_AUTHOR_*` env vars or `git config`
+- 23 unit and integration tests covering the storage, ref resolution, and full workflow
 
 **v0.3 — branches.**
-- `vedit branch <name>`, `vedit checkout`, `vedit branches`
+- `vedit branch <name>`, `vedit checkout` switching branches, `vedit branches` listing
 - Diff and log work across branches
 
 **v0.4 — merge.**

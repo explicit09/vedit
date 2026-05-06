@@ -3,7 +3,7 @@ use std::path::Path;
 use vedit_core::diff::diff;
 use vedit_core::otio;
 
-mod render;
+pub(crate) mod render;
 
 pub fn run(before: &Path, after: &Path, json: bool) -> Result<()> {
     let before_tl = otio::load(before)?;
