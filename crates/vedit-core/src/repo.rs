@@ -305,6 +305,40 @@ impl Repo {
         Ok(commit_hash)
     }
 
+    /// Commit a timeline with explicit parents, advancing the current
+    /// branch. Used by `vedit merge` to write a two-parent merge commit.
+    /// The first entry of `parents` should be the current branch's tip
+    /// (i.e. "ours"); subsequent entries are merged-in branches.
+    pub fn commit_with_parents(
+        &self,
+        timeline_hash: &str,
+        parents: Vec<String>,
+        author: Author,
+        message: &str,
+    ) -> Result<String> {
+        let commit = Commit::new(
+            timeline_hash.to_string(),
+            parents,
+            author,
+            chrono::Utc::now()
+                .format("%Y-%m-%dT%H:%M:%SZ")
+                .to_string(),
+            message.to_string(),
+        );
+        let commit_value = serde_json::to_value(&commit)?;
+        let commit_hash = self.write_timeline(&commit_value)?;
+
+        if let HeadState::Branch(name) = self.head()? {
+            let path = self.branch_path(&name);
+            if let Some(parent_dir) = path.parent() {
+                std::fs::create_dir_all(parent_dir)?;
+            }
+            std::fs::write(&path, format!("{commit_hash}\n"))?;
+        }
+
+        Ok(commit_hash)
+    }
+
     /// Walk commits starting at HEAD (or the given ref), following the first
     /// parent each step, until a commit with no parents is reached. Returns
     /// the list newest-first.
@@ -325,6 +359,57 @@ impl Repo {
             cursor = next;
         }
         Ok(out)
+    }
+
+    /// Find the most recent common ancestor of two commits, or None if
+    /// they have no common history. Walks ancestors of `a` first into a
+    /// set, then BFS from `b` and returns the first hit.
+    ///
+    /// This is the simple "merge base" algorithm. It does not handle
+    /// criss-cross merges (multiple equally-good bases) — for v0.6 we
+    /// pick whichever ancestor of `b` is found first in BFS order, which
+    /// is the most recent on `b`'s side.
+    pub fn merge_base(&self, a: &str, b: &str) -> Result<Option<String>> {
+        let a_hash = self.resolve(a)?;
+        let b_hash = self.resolve(b)?;
+        if a_hash == b_hash {
+            return Ok(Some(a_hash));
+        }
+
+        let mut a_ancestors: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        let mut frontier: std::collections::VecDeque<String> =
+            std::collections::VecDeque::new();
+        frontier.push_back(a_hash);
+        while let Some(h) = frontier.pop_front() {
+            if !a_ancestors.insert(h.clone()) {
+                continue;
+            }
+            let commit = self.read_commit(&h)?;
+            for p in commit.parents {
+                frontier.push_back(p);
+            }
+        }
+
+        let mut b_seen: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
+        let mut frontier: std::collections::VecDeque<String> =
+            std::collections::VecDeque::new();
+        frontier.push_back(b_hash);
+        while let Some(h) = frontier.pop_front() {
+            if !b_seen.insert(h.clone()) {
+                continue;
+            }
+            if a_ancestors.contains(&h) {
+                return Ok(Some(h));
+            }
+            let commit = self.read_commit(&h)?;
+            for p in commit.parents {
+                frontier.push_back(p);
+            }
+        }
+
+        Ok(None)
     }
 }
 
@@ -570,5 +655,74 @@ mod tests {
                 "should reject {bad:?}"
             );
         }
+    }
+
+    #[test]
+    fn merge_base_linear_history() {
+        // Linear: c1 -> c2 -> c3. merge_base(c3, c1) is c1.
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
+            .unwrap();
+        let c1 = repo.commit(&t, fake_author(), "c1").unwrap();
+        let c2 = repo.commit(&t, fake_author(), "c2").unwrap();
+        let c3 = repo.commit(&t, fake_author(), "c3").unwrap();
+
+        assert_eq!(repo.merge_base(&c3, &c1).unwrap().as_deref(), Some(c1.as_str()));
+        assert_eq!(repo.merge_base(&c1, &c3).unwrap().as_deref(), Some(c1.as_str()));
+        assert_eq!(repo.merge_base(&c2, &c2).unwrap().as_deref(), Some(c2.as_str()));
+    }
+
+    #[test]
+    fn merge_base_diverged_branches() {
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
+            .unwrap();
+        let base = repo.commit(&t, fake_author(), "base").unwrap();
+
+        let main_tip = repo.commit(&t, fake_author(), "main extra").unwrap();
+
+        repo.create_branch("alt", "HEAD").unwrap();
+        repo.switch_branch("alt").unwrap();
+        // alt diverges from `base` (the parent of main_tip), not from main_tip.
+        // Reset alt to point at base.
+        std::fs::write(
+            repo.root.join("refs/heads/alt"),
+            format!("{base}\n"),
+        )
+        .unwrap();
+        let alt_tip = repo.commit(&t, fake_author(), "alt extra").unwrap();
+
+        let mb = repo.merge_base(&main_tip, &alt_tip).unwrap();
+        assert_eq!(mb.as_deref(), Some(base.as_str()));
+    }
+
+    #[test]
+    fn merge_base_unrelated_returns_none() {
+        // Two repos, different histories. We fake "unrelated" by creating
+        // a commit then resetting HEAD to detach.
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
+            .unwrap();
+        let c1 = repo.commit(&t, fake_author(), "c1").unwrap();
+
+        // Manually craft an unrelated commit object with no parents.
+        let unrelated = crate::commit::Commit::new(
+            t.clone(),
+            vec![], // no parents — root commit
+            fake_author(),
+            "1970-01-01T00:00:00Z".to_string(),
+            "unrelated".to_string(),
+        );
+        let v = serde_json::to_value(&unrelated).unwrap();
+        let unrelated_hash = repo.write_timeline(&v).unwrap();
+
+        let mb = repo.merge_base(&c1, &unrelated_hash).unwrap();
+        assert!(mb.is_none(), "unrelated commits should have no merge base");
     }
 }

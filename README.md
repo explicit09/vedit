@@ -107,6 +107,12 @@ $ vedit watch timeline.otio
 Watching timeline.otio (interval 500ms, settle 200ms)
 [main f2d8815] trimmed "drone_shot_04" by 1.80s (in)
 [main a0c1d22] 3 edits: 1 trim, 1 move, 1 transition added
+
+# Merge an alternate cut back into main. Three-way merge with
+# structured conflicts; fast-forward when possible.
+$ vedit merge alt_cut
+[main 577573e] Merge branch 'alt_cut' into main
+  parents: d09af85 (ours), 609406b (theirs)
 ```
 
 ## Use from Python
@@ -158,9 +164,9 @@ The same engine drives the human-readable prose output. What an agent sees and w
 
 ## Status
 
-**v0.1 through v0.5 work.** `vedit diff` reads two OTIO files, matches clips by content fingerprint, and emits structured changes. `vedit init`/`commit`/`log`/`show`/`checkout` give you a real local repo. `vedit branch`/`branches` and `vedit checkout <branch>` give you divergent histories. `vedit watch <timeline.otio>` auto-commits every time the file changes, with a commit message generated from the diff (`"5 edits: 2 trims, 1 move, 1 transition added"`). Python bindings let agents `repo.commit(timeline_dict, message=...)` directly without temp files. **59 tests pass** (51 Rust + 8 Python).
+**v0.1 through v0.6 work.** Every feature on the original roadmap. `vedit diff` reads two OTIO files and emits structured changes. `vedit init`/`commit`/`log`/`show`/`checkout` give you a real local repo. `vedit branch`/`branches` give you divergent histories. `vedit merge <branch>` does fast-forward and three-way merges with structured conflict reporting (track-granular in v0.6.0; clip-granular in v0.6.1). `vedit watch` auto-commits on file change. Python bindings let agents `repo.commit(timeline_dict, message=...)` directly. **74 tests pass** (66 Rust + 8 Python).
 
-What's not in yet: merge (v0.6), remotes. Today vedit is a Rust library, a CLI, and a Python module. Wheels for PyPI come once the API stabilizes.
+What's not in yet: clip-granular merge conflicts (v0.6.1), Python merge bindings (v0.6.1), remotes. Today vedit is a Rust library, a CLI, and a Python module.
 
 ## Roadmap
 
@@ -206,16 +212,29 @@ What's not in yet: merge (v0.6), remotes. Today vedit is a Rust library, a CLI, 
 - Documented Resolve setup at [`docs/RESOLVE.md`](docs/RESOLVE.md): one Python export script, one hotkey, one running `vedit watch` — and edits commit themselves
 - 4 integration tests covering auto-message generation across no-op, single-change, two-change, and many-change cases
 
-**v0.6 — merge.**
-- `vedit merge <branch>` with conflict surfacing
-- Non-overlapping edits auto-merge; overlapping edits fail loudly with a structured conflict report
+**v0.6 — merge** ✓ Done.
+- `vedit merge <branch>` with three cases: already-up-to-date, fast-forward (move the branch pointer), true three-way merge (two-parent commit)
+- Track-granular conflict detection (v0.6.0): if both branches changed the same track, vedit refuses, prints structured conflicts, exits non-zero. No silent corruption.
+- Conflict types: BothModified, BothAdded, DeleteVsModify
+- `--dry-run` flag previews without committing
+- Modeled on Lindholm's [3DM](https://www.cis.upenn.edu/~bcpierce/courses/dd/papers/3dm-thesis.ps) algorithm for ordered-tree merges
+- 11 unit tests for the merge engine + merge_base + 4 integration tests for the workflow
 
 ```
-$ vedit merge trailer_cut social_cut
-  Conflict: both branches modified "intro_sequence"
-  Conflict: both branches retimed "drone_shot_04" differently
-  Auto-merged: 7 non-overlapping edits
+$ vedit merge alt_cut
+[main 577573e] Merge branch 'alt_cut' into main
+  parents: d09af85 (ours), 609406b (theirs)
+
+$ vedit merge alt_cut          # when there's a real conflict
+Merge of alt_cut into main hit 1 conflict(s):
+  - Video track "V1" — both branches modified this track
+
+Nothing was committed. v0.6 has no in-place conflict resolution.
+To unblock: edit one branch to incorporate the other side's changes,
+commit, then re-run vedit merge.
 ```
+
+**v0.6.1 — refinements.** Clip-granular conflicts (so V1.b and V1.c don't conflict just because both touched V1). Python `repo.merge(branch)` binding. `vedit merge --abort` and resolution flags.
 
 **Later** — Node bindings, remotes, editor-specific adapters.
 

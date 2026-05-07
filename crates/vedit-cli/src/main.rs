@@ -72,6 +72,22 @@ enum Cmd {
     },
     /// List branches, marking the current one with `*`.
     Branches,
+    /// Merge another branch into the current branch.
+    ///
+    /// Fast-forwards if HEAD is an ancestor of <target>. Otherwise runs
+    /// a three-way merge against the common ancestor. Conflicts at
+    /// track granularity (v0.6.0): if both branches changed the same
+    /// track, vedit refuses and prints the conflicts.
+    Merge {
+        /// Branch or commit to merge in.
+        target: String,
+        /// Optional commit message. Defaults to "Merge branch 'X' into Y".
+        #[arg(short, long)]
+        message: Option<String>,
+        /// Print what would happen, don't write anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Watch an OTIO file and auto-commit on change.
     ///
     /// Polls the file's mtime + size, debounces with a settling window,
@@ -108,6 +124,10 @@ fn main() -> Result<()> {
         Cmd::Checkout { refstr, output } => cmd::checkout::run(&refstr, output.as_deref()),
         Cmd::Branch { name, delete } => cmd::branch::run(&name, delete),
         Cmd::Branches => cmd::branches::run(),
+        Cmd::Merge { target, message, dry_run } => cmd::merge::run(
+            &target,
+            cmd::merge::MergeOptions { message, dry_run },
+        ),
         Cmd::Watch {
             timeline,
             interval,
