@@ -120,10 +120,13 @@ $ vedit merge alt_cut
 The agent surface. No CLI, no temp files. Pass OTIO timelines as Python dicts straight from your tool.
 
 ```
+python3 -m venv .venv && source .venv/bin/activate
 pip install pyvedit
 ```
 
 The PyPI distribution is `pyvedit`; the importable Python module is `vedit`. (The `vedit` PyPI name belongs to an unrelated FFmpeg wrapper from 2016. We kept the project name and brand intact and only renamed the install line.)
+
+> macOS Homebrew + recent Linux will refuse `pip install` outside a venv — that's PEP 668, not a vedit thing. The venv line above is the universal fix. If you already use a venv (or conda, or `uv`), skip it.
 
 ```python
 import vedit
