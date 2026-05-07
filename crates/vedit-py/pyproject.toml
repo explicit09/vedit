@@ -1,24 +1,60 @@
 [build-system]
-requires = ["maturin>=1.5"]
+requires = ["maturin>=1.5,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "vedit"
+name = "pyvedit"
 version = "0.0.1"
-description = "Version control for video timelines."
-readme = "../../README.md"
+description = "Semantic version control for video timelines (OTIO). Library + CLI."
+readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.9"
+authors = [
+    { name = "Tadiwa Mbuwayesango", email = "tmbuwa09@gmail.com" },
+]
+keywords = [
+    "otio",
+    "opentimelineio",
+    "video",
+    "video-editing",
+    "version-control",
+    "vcs",
+    "diff",
+    "merge",
+    "ai-agents",
+]
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Rust",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: Apache Software License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
     "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Version Control",
+    "Typing :: Typed",
 ]
 
 [project.urls]
+Homepage = "https://github.com/explicit09/vedit"
 Repository = "https://github.com/explicit09/vedit"
+Issues = "https://github.com/explicit09/vedit/issues"
+Changelog = "https://github.com/explicit09/vedit/releases"
 
 [tool.maturin]
+# The PyPI distribution is named `pyvedit`, but the importable Python
+# module is `vedit` — controlled by [lib].name in Cargo.toml. Users
+# write `pip install pyvedit` then `import vedit`.
 manifest-path = "Cargo.toml"
 features = ["pyo3/extension-module"]
+module-name = "vedit"
+strip = true

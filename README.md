@@ -119,6 +119,12 @@ $ vedit merge alt_cut
 
 The agent surface. No CLI, no temp files. Pass OTIO timelines as Python dicts straight from your tool.
 
+```
+pip install pyvedit
+```
+
+The PyPI distribution is `pyvedit`; the importable Python module is `vedit`. (The `vedit` PyPI name belongs to an unrelated FFmpeg wrapper from 2016. We kept the project name and brand intact and only renamed the install line.)
+
 ```python
 import vedit
 
@@ -144,9 +150,9 @@ for change in repo.diff_refs("main", "alt"):
 changes = vedit.diff(timeline_a, timeline_b)
 ```
 
-`vedit-py` is built on the same Rust engine as the CLI; what an agent sees through the library and what a human sees through `vedit show HEAD` are projections of the same truth.
+`pyvedit` is built on the same Rust engine as the CLI; what an agent sees through the library and what a human sees through `vedit show HEAD` are projections of the same truth.
 
-Build locally for now (PyPI wheel coming):
+Build from source (alternative to `pip install pyvedit`):
 
 ```
 git clone https://github.com/explicit09/vedit.git && cd vedit
