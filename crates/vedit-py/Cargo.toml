@@ -16,5 +16,10 @@ vedit-core = { path = "../vedit-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
-pyo3 = { version = "0.26", features = ["extension-module", "anyhow"] }
+# abi3-py39 means: build a single wheel per platform that works on
+# CPython 3.9+. Without this we'd have to ship a separate wheel per
+# minor Python version. abi3 also avoids a Windows-specific issue with
+# pyo3's bundled sysconfig that fails the build on hosts that don't
+# have every Python version installed.
+pyo3 = { version = "0.26", features = ["extension-module", "anyhow", "abi3-py39"] }
 pythonize = "0.26"
