@@ -69,9 +69,9 @@ For each track present in any of `base` / `ours` / `theirs`:
 - Both touched it the same way → keep one.
 - Both touched it differently → conflict.
 
-v0.6.0 reports conflicts at track granularity. Editors A and B touching different clips on the same track will produce a spurious conflict. v0.6.1 will refine to clip granularity.
+Today, conflicts are reported at track granularity. Two editors touching different clips on the same track will produce a spurious conflict. Refining to clip granularity is the next priority — see [GitHub issues](https://github.com/explicit09/vedit/issues).
 
-Three conflict types: `BothModified`, `BothAdded`, `DeleteVsModify`. Conflicts are structured (JSON, agent-readable). v0.6 has no in-place resolution UX — the user picks a branch, edits to incorporate the other side's changes, and re-merges.
+Three conflict types: `BothModified`, `BothAdded`, `DeleteVsModify`. Conflicts are structured (JSON, agent-readable). There is no in-place resolution UX yet — the user picks a branch, edits to incorporate the other side's changes, and re-merges.
 
 ## The diff engine
 
