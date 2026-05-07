@@ -1,6 +1,7 @@
 # vedit
 
-Save your video edits like you save your code.
+Version control for video edits.
+Track every version of your timeline. Branch off, compare, and merge cuts.
 
 ```
 $ vedit diff intro_v1.otio intro_v2.otio
@@ -72,7 +73,6 @@ Watching timeline.otio
 ## More
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how vedit works under the hood, design choices, comparison with related projects.
-- [docs/ROADMAP.md](docs/ROADMAP.md) — what's shipped, what's next.
 - [docs/RESOLVE.md](docs/RESOLVE.md) — DaVinci Resolve setup.
 
 ## License
