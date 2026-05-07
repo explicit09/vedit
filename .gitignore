@@ -15,3 +15,4 @@ Cargo.lock.bak
 /my_test/
 /v1.otio
 /v2.otio
+.claude/

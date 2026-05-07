@@ -52,16 +52,14 @@ jobs:
           name: wheels-linux-${{ matrix.target }}
           path: target/wheels/*.whl
 
+  # macOS arm64 only for v0.0.1. The macOS Intel runner pool (`macos-13`)
+  # has unreliable queue times — multi-minute waits even for a 35-second
+  # build, blocking the whole release. Apple stopped selling Intel Macs
+  # in 2023; anyone still on x86_64 can build from source via maturin.
+  # We can add `macos-13` back when we need it.
   build-macos:
-    name: Wheels - macOS ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: macos-13
-            target: x86_64
-          - os: macos-14
-            target: aarch64
+    name: Wheels - macOS aarch64
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -71,11 +69,11 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           working-directory: crates/vedit-py
-          target: ${{ matrix.target }}
+          target: aarch64
           args: --release --strip
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.target }}
+          name: wheels-macos-aarch64
           path: target/wheels/*.whl
 
   build-windows:
