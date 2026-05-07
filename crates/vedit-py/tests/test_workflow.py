@@ -7,12 +7,52 @@ Or via maturin:
     cd crates/vedit-py && maturin develop --release && pytest tests/
 """
 
+import json
+import os
 import pathlib
+import subprocess
+import time
 import tempfile
 
 import pytest
 
 import vedit
+
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+
+
+@pytest.fixture(scope="session")
+def vedit_bin() -> pathlib.Path:
+    subprocess.run(
+        ["cargo", "build", "--bin", "vedit"],
+        cwd=REPO_ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return REPO_ROOT / "target" / "debug" / "vedit"
+
+
+def write_timeline(path: pathlib.Path, name: str, n_clips: int) -> None:
+    path.write_text(json.dumps(make_timeline(name, n_clips)), encoding="utf-8")
+
+
+def run_cli(vedit_bin: pathlib.Path, cwd: pathlib.Path, *args: str) -> subprocess.CompletedProcess:
+    env = {
+        **os.environ,
+        **{
+            "VEDIT_AUTHOR_NAME": "test",
+            "VEDIT_AUTHOR_EMAIL": "test@example.com",
+        },
+    }
+    return subprocess.run(
+        [str(vedit_bin), *args],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
 
 
 def make_timeline(name: str, n_clips: int) -> dict:
@@ -168,3 +208,162 @@ def test_change_objects_are_iterable_and_have_op_and_dict():
         d = c.to_dict()
         assert isinstance(d, dict)
         assert d["op"] == c.op
+
+
+def test_python_reads_commit_made_by_cli(vedit_bin):
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = pathlib.Path(tmp)
+        timeline_path = workdir / "timeline.otio"
+        write_timeline(timeline_path, "cli", 2)
+
+        assert run_cli(vedit_bin, workdir, "init").returncode == 0
+        commit = run_cli(vedit_bin, workdir, "commit", "timeline.otio", "-m", "cli initial")
+        assert commit.returncode == 0, commit.stderr
+
+        repo = vedit.Repo.open(workdir)
+        log = repo.log()
+        assert len(log) == 1
+        assert log[0][1]["message"] == "cli initial"
+        assert len(repo.read_timeline("HEAD")["tracks"]["children"][0]["children"]) == 2
+
+
+def test_cli_reads_commits_made_by_python(vedit_bin):
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = pathlib.Path(tmp)
+        repo = vedit.Repo.init(workdir)
+        repo.commit(make_timeline("py", 2), message="python initial")
+        repo.commit(make_timeline("py", 3), message="python adds clip")
+
+        log = run_cli(vedit_bin, workdir, "log")
+        assert log.returncode == 0, log.stderr
+        assert "python adds clip" in log.stdout
+        assert "python initial" in log.stdout
+
+        show = run_cli(vedit_bin, workdir, "show", "HEAD")
+        assert show.returncode == 0, show.stderr
+        assert "python adds clip" in show.stdout
+        assert 'Added "clip_2"' in show.stdout
+
+
+def test_watch_once_commits_changed_export(vedit_bin):
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = pathlib.Path(tmp)
+        timeline_path = workdir / "timeline.otio"
+        write_timeline(timeline_path, "watch", 1)
+        assert run_cli(vedit_bin, workdir, "init").returncode == 0
+
+        proc = subprocess.Popen(
+            [
+                str(vedit_bin),
+                "watch",
+                "timeline.otio",
+                "--once",
+                "--interval",
+                "20",
+                "--settle",
+                "20",
+                "--message-prefix",
+                "watch:",
+            ],
+            cwd=workdir,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={
+                **os.environ,
+                "VEDIT_AUTHOR_NAME": "test",
+                "VEDIT_AUTHOR_EMAIL": "test@example.com",
+            },
+        )
+        time.sleep(0.1)
+        write_timeline(timeline_path, "watch", 2)
+        stdout, stderr = proc.communicate(timeout=5)
+
+        assert proc.returncode == 0, stderr
+        assert "Watching timeline.otio" in stdout
+        assert "watch: Initial commit: 1 track(s), 2 clip(s)" in stdout
+
+        repo = vedit.Repo.open(workdir)
+        assert len(repo.log()) == 1
+        assert repo.log()[0][1]["message"] == "watch: Initial commit: 1 track(s), 2 clip(s)"
+
+
+def test_python_observes_two_parent_merge_commit(vedit_bin):
+    """
+    v0.6 doesn't expose merge through Python yet, but a merge commit
+    created via the CLI must be readable through the Python API and
+    must report two parents. Pins the cross-tool contract for v0.6.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = pathlib.Path(tmp)
+        timeline_path = workdir / "timeline.otio"
+
+        # base
+        write_timeline(timeline_path, "base", 1)
+        assert run_cli(vedit_bin, workdir, "init").returncode == 0
+        assert run_cli(vedit_bin, workdir, "commit", "timeline.otio", "-m", "base").returncode == 0
+
+        # branch alt at base
+        assert run_cli(vedit_bin, workdir, "branch", "alt").returncode == 0
+
+        # main: add an audio track (independent of V1 changes)
+        main_tl = make_timeline("base", 1)
+        main_tl["tracks"]["children"].append({
+            "OTIO_SCHEMA": "Track.1",
+            "name": "A1",
+            "kind": "Audio",
+            "children": [],
+        })
+        timeline_path.write_text(json.dumps(main_tl), encoding="utf-8")
+        assert run_cli(vedit_bin, workdir, "commit", "timeline.otio", "-m", "main: add A1").returncode == 0
+        head_main = run_cli(vedit_bin, workdir, "log").stdout.splitlines()[0].split()[0]
+
+        # alt: add a clip to V1 (independent of A1)
+        assert run_cli(vedit_bin, workdir, "checkout", "alt").returncode == 0
+        write_timeline(timeline_path, "base", 2)
+        assert run_cli(vedit_bin, workdir, "commit", "timeline.otio", "-m", "alt: add clip").returncode == 0
+        head_alt = run_cli(vedit_bin, workdir, "log").stdout.splitlines()[0].split()[0]
+
+        # back to main, merge alt
+        assert run_cli(vedit_bin, workdir, "checkout", "main").returncode == 0
+        merge = run_cli(vedit_bin, workdir, "merge", "alt")
+        assert merge.returncode == 0, merge.stderr
+        assert "Merge branch 'alt' into main" in merge.stdout
+
+        # Python sees the merge commit with two parents.
+        repo = vedit.Repo.open(workdir)
+        log = repo.log()
+        assert len(log) >= 3, log
+        merge_hash, merge_commit = log[0]
+        assert "Merge branch 'alt' into main" in merge_commit["message"]
+        parents = merge_commit["parents"]
+        assert len(parents) == 2, parents
+        # Resolve the short CLI hashes to full hashes for comparison.
+        assert repo.resolve(head_main) == parents[0]
+        assert repo.resolve(head_alt) == parents[1]
+
+
+def test_cli_negative_cases_are_pinned(vedit_bin):
+    with tempfile.TemporaryDirectory() as tmp:
+        workdir = pathlib.Path(tmp)
+        valid = workdir / "valid.otio"
+        garbage = workdir / "garbage.json"
+        empty = workdir / "empty.otio"
+        write_timeline(valid, "valid", 1)
+        garbage.write_text("{not json", encoding="utf-8")
+        empty.write_text("", encoding="utf-8")
+
+        diff = run_cli(vedit_bin, workdir, "diff", "garbage.json", "valid.otio")
+        assert diff.returncode != 0
+        assert "parsing" in diff.stderr
+
+        assert run_cli(vedit_bin, workdir, "init").returncode == 0
+        commit_empty = run_cli(vedit_bin, workdir, "commit", "empty.otio")
+        assert commit_empty.returncode != 0
+        assert "parsing" in commit_empty.stderr
+
+        commit_valid = run_cli(vedit_bin, workdir, "commit", "valid.otio", "-m", "initial")
+        assert commit_valid.returncode == 0, commit_valid.stderr
+        merge_missing = run_cli(vedit_bin, workdir, "merge", "missing_branch")
+        assert merge_missing.returncode != 0
+        assert "missing_branch" in merge_missing.stderr
