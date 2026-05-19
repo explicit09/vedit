@@ -6,6 +6,7 @@
 //! JSON on the parent object so we can write it back unchanged later.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Timeline {
@@ -43,7 +44,15 @@ pub struct Clip {
     pub name: String,
     pub media_reference: Option<String>,
     pub source_range: Option<TimeRange>,
-    pub effect_count: usize,
+    pub effects: Vec<Effect>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Effect {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_name: Option<String>,
+    pub metadata: Value,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

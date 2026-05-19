@@ -46,16 +46,30 @@ fn clip(name: &str, media: &str, src_start: f64, src_dur: f64) -> Value {
     })
 }
 
+fn effect(name: &str, metadata: Value) -> Value {
+    json!({
+        "OTIO_SCHEMA": "Effect.1",
+        "name": name,
+        "metadata": metadata,
+    })
+}
+
+fn effect_with_effect_name(effect_name: &str) -> Value {
+    json!({
+        "OTIO_SCHEMA": "Effect.1",
+        "name": "",
+        "effect_name": effect_name,
+        "metadata": {},
+    })
+}
+
 fn clip_with_effects(
     name: &str,
     media: &str,
     src_start: f64,
     src_dur: f64,
-    effect_count: usize,
+    effects: Vec<Value>,
 ) -> Value {
-    let effects: Vec<Value> = (0..effect_count)
-        .map(|i| json!({"OTIO_SCHEMA": "Effect.1", "name": format!("e{i}"), "metadata": {}}))
-        .collect();
     json!({
         "OTIO_SCHEMA": "Clip.2",
         "name": name,
@@ -378,7 +392,7 @@ fn case_09_effects_changed() {
         vec![track(
             "V1",
             "Video",
-            vec![clip_with_effects("a", "media://a.mov", 0.0, 24.0, 0)],
+            vec![clip_with_effects("a", "media://a.mov", 0.0, 24.0, vec![])],
         )],
     );
     let after = timeline(
@@ -386,22 +400,214 @@ fn case_09_effects_changed() {
         vec![track(
             "V1",
             "Video",
-            vec![clip_with_effects("a", "media://a.mov", 0.0, 24.0, 2)],
+            vec![clip_with_effects(
+                "a",
+                "media://a.mov",
+                0.0,
+                24.0,
+                vec![
+                    effect("blur", json!({"radius": 4})),
+                    effect("color", json!({"saturation": 1.2})),
+                ],
+            )],
         )],
     );
     let changes = run_diff(before, after);
     assert_eq!(changes.len(), 1, "{:#?}", changes);
     match &changes[0] {
         Change::EffectsChanged { before, after, .. } => {
-            assert_eq!(*before, 0);
-            assert_eq!(*after, 2);
+            assert!(before.is_empty());
+            assert_eq!(after.len(), 2);
+            assert_eq!(after[0].name, "blur");
+            assert_eq!(after[0].metadata["radius"], json!(4));
+            assert_eq!(after[1].name, "color");
+            assert_eq!(after[1].metadata["saturation"], json!(1.2));
         }
         other => panic!("expected EffectsChanged, got {:?}", other),
     }
 }
 
 #[test]
-fn case_10_track_added_and_multitrack() {
+fn case_10_effect_parameters_changed_without_count_change() {
+    let before = timeline(
+        "doc",
+        vec![track(
+            "V1",
+            "Video",
+            vec![clip_with_effects(
+                "a",
+                "media://a.mov",
+                0.0,
+                24.0,
+                vec![effect("blur", json!({"radius": 4}))],
+            )],
+        )],
+    );
+    let after = timeline(
+        "doc",
+        vec![track(
+            "V1",
+            "Video",
+            vec![clip_with_effects(
+                "a",
+                "media://a.mov",
+                0.0,
+                24.0,
+                vec![effect("blur", json!({"radius": 12}))],
+            )],
+        )],
+    );
+    let changes = run_diff(before, after);
+    assert_eq!(changes.len(), 1, "{:#?}", changes);
+    match &changes[0] {
+        Change::EffectsChanged { before, after, .. } => {
+            assert_eq!(before.len(), 1);
+            assert_eq!(after.len(), 1);
+            assert_eq!(before[0].metadata["radius"], json!(4));
+            assert_eq!(after[0].metadata["radius"], json!(12));
+        }
+        other => panic!("expected EffectsChanged, got {:?}", other),
+    }
+}
+
+#[test]
+fn case_11_transition_changed() {
+    let before = timeline(
+        "doc",
+        vec![track(
+            "V1",
+            "Video",
+            vec![
+                clip("a", "media://a.mov", 0.0, 24.0),
+                transition("crossfade", 6.0, 6.0),
+                clip("b", "media://b.mov", 0.0, 24.0),
+            ],
+        )],
+    );
+    let after = timeline(
+        "doc",
+        vec![track(
+            "V1",
+            "Video",
+            vec![
+                clip("a", "media://a.mov", 0.0, 24.0),
+                transition("dip to black", 12.0, 12.0),
+                clip("b", "media://b.mov", 0.0, 24.0),
+            ],
+        )],
+    );
+    let changes = run_diff(before, after);
+    assert_eq!(changes.len(), 1, "{:#?}", changes);
+    match &changes[0] {
+        Change::TransitionChanged {
+            before_name,
+            after_name,
+            before_duration,
+            after_duration,
+            ..
+        } => {
+            assert_eq!(before_name, "crossfade");
+            assert_eq!(after_name, "dip to black");
+            assert_eq!(before_duration.unwrap().value, 12.0);
+            assert_eq!(after_duration.unwrap().value, 24.0);
+        }
+        other => panic!("expected TransitionChanged, got {:?}", other),
+    }
+}
+
+#[test]
+fn case_12_effect_name_changed_without_metadata_change() {
+    let before = timeline(
+        "doc",
+        vec![track(
+            "V1",
+            "Video",
+            vec![clip_with_effects(
+                "a",
+                "media://a.mov",
+                0.0,
+                24.0,
+                vec![effect_with_effect_name("LinearTimeWarp")],
+            )],
+        )],
+    );
+    let after = timeline(
+        "doc",
+        vec![track(
+            "V1",
+            "Video",
+            vec![clip_with_effects(
+                "a",
+                "media://a.mov",
+                0.0,
+                24.0,
+                vec![effect_with_effect_name("FreezeFrame")],
+            )],
+        )],
+    );
+    let changes = run_diff(before, after);
+    assert_eq!(changes.len(), 1, "{:#?}", changes);
+    assert!(
+        matches!(changes[0], Change::EffectsChanged { .. }),
+        "expected EffectsChanged, got {:?}",
+        changes[0]
+    );
+}
+
+#[test]
+fn case_13_transition_retarget_reports_remove_and_add_not_changed() {
+    let before = timeline(
+        "doc",
+        vec![track(
+            "V1",
+            "Video",
+            vec![
+                clip("a", "media://a.mov", 0.0, 24.0),
+                transition("crossfade", 6.0, 6.0),
+                clip("b", "media://b.mov", 0.0, 24.0),
+                clip("c", "media://c.mov", 0.0, 24.0),
+            ],
+        )],
+    );
+    let after = timeline(
+        "doc",
+        vec![track(
+            "V1",
+            "Video",
+            vec![
+                clip("a", "media://a.mov", 0.0, 24.0),
+                transition("dip to black", 12.0, 12.0),
+                clip("c", "media://c.mov", 0.0, 24.0),
+                clip("b", "media://b.mov", 0.0, 24.0),
+            ],
+        )],
+    );
+    let changes = run_diff(before, after);
+    assert!(
+        !changes
+            .iter()
+            .any(|c| matches!(c, Change::TransitionChanged { .. })),
+        "retargeted transition should not be TransitionChanged: {:#?}",
+        changes
+    );
+    assert!(
+        changes
+            .iter()
+            .any(|c| matches!(c, Change::TransitionRemoved { .. })),
+        "expected TransitionRemoved: {:#?}",
+        changes
+    );
+    assert!(
+        changes
+            .iter()
+            .any(|c| matches!(c, Change::TransitionAdded { .. })),
+        "expected TransitionAdded: {:#?}",
+        changes
+    );
+}
+
+#[test]
+fn case_14_track_added_and_multitrack() {
     let before = timeline(
         "doc",
         vec![track(
@@ -430,7 +636,7 @@ fn case_10_track_added_and_multitrack() {
 }
 
 #[test]
-fn case_11_no_changes() {
+fn case_15_no_changes() {
     let same = timeline(
         "doc",
         vec![track(
@@ -444,7 +650,7 @@ fn case_11_no_changes() {
 }
 
 #[test]
-fn case_12_combined_trim_and_add() {
+fn case_16_combined_trim_and_add() {
     let before = timeline(
         "doc",
         vec![track(
