@@ -1,3 +1,4 @@
+mod atomic;
 pub mod commit;
 pub mod diff;
 pub mod merge;

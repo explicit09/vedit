@@ -7,9 +7,7 @@
 //! ID. That choice is what makes vedit work on OTIO from any source,
 //! including editors that strip third-party metadata.
 
-use crate::model::{
-    Clip, RationalTime, TimeRange, Timeline, Track, TrackChild, TrackKind,
-};
+use crate::model::{Clip, RationalTime, TimeRange, Timeline, Track, TrackChild, TrackKind};
 use serde::{Deserialize, Serialize};
 
 /// One unit of change between two timelines. The shape is designed to be
@@ -118,8 +116,7 @@ pub fn diff(before: &Timeline, after: &Timeline) -> Vec<Change> {
     let mut paired_tracks: Vec<(usize, usize)> = Vec::new();
 
     for (a_idx, a_track) in after.tracks.iter().enumerate() {
-        if let Some(b_idx) = find_matching_track(a_track, &before.tracks, &before_tracks_used)
-        {
+        if let Some(b_idx) = find_matching_track(a_track, &before.tracks, &before_tracks_used) {
             before_tracks_used[b_idx] = true;
             after_tracks_used[a_idx] = true;
             paired_tracks.push((b_idx, a_idx));
@@ -156,11 +153,7 @@ pub fn diff(before: &Timeline, after: &Timeline) -> Vec<Change> {
     changes
 }
 
-fn find_matching_track(
-    needle: &Track,
-    haystack: &[Track],
-    used: &[bool],
-) -> Option<usize> {
+fn find_matching_track(needle: &Track, haystack: &[Track], used: &[bool]) -> Option<usize> {
     // Prefer same kind + same name.
     for (i, t) in haystack.iter().enumerate() {
         if used[i] {
@@ -245,10 +238,9 @@ fn diff_track(before: &Track, after: &Track, out: &mut Vec<Change>) {
     // matches (LCS-style); pairs in that subset stayed in place, the
     // others moved.
     matches.sort_by_key(|(b, _)| *b);
-    let stable_after: std::collections::HashSet<usize> =
-        longest_increasing_after_indices(&matches)
-            .into_iter()
-            .collect();
+    let stable_after: std::collections::HashSet<usize> = longest_increasing_after_indices(&matches)
+        .into_iter()
+        .collect();
 
     // Emit changes for matched clips.
     for (b_pos, a_pos) in &matches {
@@ -257,14 +249,15 @@ fn diff_track(before: &Track, after: &Track, out: &mut Vec<Change>) {
 
         // Trim detection.
         if let (Some(br), Some(ar)) = (b_clip.source_range, a_clip.source_range)
-            && !time_ranges_equal(&br, &ar) {
-                out.push(Change::Trimmed {
-                    clip: a_clip.into(),
-                    track: track_name.clone(),
-                    before: br,
-                    after: ar,
-                });
-            }
+            && !time_ranges_equal(&br, &ar)
+        {
+            out.push(Change::Trimmed {
+                clip: a_clip.into(),
+                track: track_name.clone(),
+                before: br,
+                after: ar,
+            });
+        }
 
         // Move detection: only flag pairs that aren't part of the stable
         // order. If an inserted/removed clip merely shifted absolute
@@ -334,7 +327,15 @@ fn diff_track(before: &Track, after: &Track, out: &mut Vec<Change>) {
     // Transition-level diff: walk the children of both tracks and emit
     // transition_added / transition_removed when the set of transitions
     // between matched neighbors differs.
-    diff_transitions(before, after, &track_name, &matches, &before_clips, &after_clips, out);
+    diff_transitions(
+        before,
+        after,
+        &track_name,
+        &matches,
+        &before_clips,
+        &after_clips,
+        out,
+    );
 }
 
 fn diff_transitions(
@@ -354,12 +355,9 @@ fn diff_transitions(
         let b_t = &before_transitions[*b_pos];
         let a_t = &after_transitions[*a_pos];
 
-        let before_neighbor: Option<ClipRef> = before_clips
-            .get(*b_pos + 1)
-            .map(|(_, c)| (*c).into());
-        let after_neighbor: Option<ClipRef> = after_clips
-            .get(*a_pos + 1)
-            .map(|(_, c)| (*c).into());
+        let before_neighbor: Option<ClipRef> =
+            before_clips.get(*b_pos + 1).map(|(_, c)| (*c).into());
+        let after_neighbor: Option<ClipRef> = after_clips.get(*a_pos + 1).map(|(_, c)| (*c).into());
         let this_clip: ClipRef = before_clips[*b_pos].1.into();
         let _ = this_clip; // not used currently; kept for symmetry
 
@@ -541,7 +539,12 @@ fn verb_phrase(change: &Change) -> String {
     match change {
         Change::TrackAdded { name, .. } => format!("added track \"{name}\""),
         Change::TrackRemoved { name, .. } => format!("removed track \"{name}\""),
-        Change::Trimmed { clip, before, after, .. } => {
+        Change::Trimmed {
+            clip,
+            before,
+            after,
+            ..
+        } => {
             let in_delta = after.start_time.seconds() - before.start_time.seconds();
             let dur_delta = after.duration.seconds() - before.duration.seconds();
             let amount = if in_delta.abs() > 1e-6 {
@@ -556,7 +559,12 @@ fn verb_phrase(change: &Change) -> String {
             };
             format!("trimmed \"{}\" by {:.2}s ({dir})", clip.name, amount)
         }
-        Change::Moved { clip, after_neighbor, before_neighbor, .. } => {
+        Change::Moved {
+            clip,
+            after_neighbor,
+            before_neighbor,
+            ..
+        } => {
             if let Some(n) = after_neighbor {
                 format!("moved \"{}\" before \"{}\"", clip.name, n.name)
             } else if let Some(n) = before_neighbor {
@@ -567,7 +575,12 @@ fn verb_phrase(change: &Change) -> String {
         }
         Change::Added { clip, .. } => format!("added \"{}\"", clip.name),
         Change::Removed { clip, .. } => format!("removed \"{}\"", clip.name),
-        Change::EffectsChanged { clip, before, after, .. } => {
+        Change::EffectsChanged {
+            clip,
+            before,
+            after,
+            ..
+        } => {
             format!("effects on \"{}\" {}→{}", clip.name, before, after)
         }
         Change::Replaced { clip, .. } => format!("replaced media on \"{}\"", clip.name),
@@ -628,10 +641,25 @@ fn summary_phrase(changes: &[Change]) -> String {
     push(&mut parts, removes, "removal", "removals");
     push(&mut parts, replaces, "replacement", "replacements");
     push(&mut parts, effects, "effect change", "effect changes");
-    push(&mut parts, transitions_added, "transition added", "transitions added");
-    push(&mut parts, transitions_removed, "transition removed", "transitions removed");
+    push(
+        &mut parts,
+        transitions_added,
+        "transition added",
+        "transitions added",
+    );
+    push(
+        &mut parts,
+        transitions_removed,
+        "transition removed",
+        "transitions removed",
+    );
     push(&mut parts, tracks_added, "track added", "tracks added");
-    push(&mut parts, tracks_removed, "track removed", "tracks removed");
+    push(
+        &mut parts,
+        tracks_removed,
+        "track removed",
+        "tracks removed",
+    );
 
     let total = changes.len();
     let edits_word = if total == 1 { "edit" } else { "edits" };

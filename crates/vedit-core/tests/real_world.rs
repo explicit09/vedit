@@ -83,7 +83,10 @@ fn detects_trim_on_real_multitrack() {
             _ => None,
         })
         .expect("first track has at least one clip");
-    let sr = first_clip.source_range.as_mut().expect("clip has source_range");
+    let sr = first_clip
+        .source_range
+        .as_mut()
+        .expect("clip has source_range");
     sr.duration.value -= 12.0;
 
     let changes = diff(&original, &modified);

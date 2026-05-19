@@ -4,16 +4,13 @@
 //! fields are tolerated. The parser fails only when the document is
 //! structurally not an OTIO timeline.
 
-use crate::model::{
-    Clip, Gap, RationalTime, TimeRange, Timeline, Track, TrackChild, TrackKind,
-};
-use anyhow::{anyhow, Context, Result};
+use crate::model::{Clip, Gap, RationalTime, TimeRange, Timeline, Track, TrackChild, TrackKind};
+use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 use std::path::Path;
 
 pub fn load(path: &Path) -> Result<Timeline> {
-    let bytes =
-        std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let value: Value = serde_json::from_slice(&bytes)
         .with_context(|| format!("parsing {} as JSON", path.display()))?;
     parse_timeline(&value).with_context(|| format!("interpreting {}", path.display()))
@@ -177,16 +174,18 @@ fn parse_gap(value: &Value) -> Gap {
 fn parse_media_reference(value: &Value) -> Option<String> {
     let map = value.as_object()?;
     if let Some(url) = map.get("target_url").and_then(|s| s.as_str())
-        && !url.is_empty() {
-            return Some(url.to_string());
-        }
+        && !url.is_empty()
+    {
+        return Some(url.to_string());
+    }
     // Some OTIO files use ExternalReference with `target_url`, others use
     // `MissingReference` with metadata, others use `GeneratorReference`. We
     // fall back to a reproducible identity string so generators still match.
     if let Some(name) = map.get("name").and_then(|s| s.as_str())
-        && !name.is_empty() {
-            return Some(format!("ref-by-name:{name}"));
-        }
+        && !name.is_empty()
+    {
+        return Some(format!("ref-by-name:{name}"));
+    }
     None
 }
 

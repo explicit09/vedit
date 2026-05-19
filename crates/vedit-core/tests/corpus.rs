@@ -5,8 +5,8 @@
 //! regression tests for the engine and the source of truth for what
 //! "semantic diff" means in vedit.
 
-use serde_json::{json, Value};
-use vedit_core::diff::{diff, Change};
+use serde_json::{Value, json};
+use vedit_core::diff::{Change, diff};
 use vedit_core::otio;
 
 // --- helpers -----------------------------------------------------------
@@ -46,7 +46,13 @@ fn clip(name: &str, media: &str, src_start: f64, src_dur: f64) -> Value {
     })
 }
 
-fn clip_with_effects(name: &str, media: &str, src_start: f64, src_dur: f64, effect_count: usize) -> Value {
+fn clip_with_effects(
+    name: &str,
+    media: &str,
+    src_start: f64,
+    src_dur: f64,
+    effect_count: usize,
+) -> Value {
     let effects: Vec<Value> = (0..effect_count)
         .map(|i| json!({"OTIO_SCHEMA": "Effect.1", "name": format!("e{i}"), "metadata": {}}))
         .collect();
@@ -183,13 +189,19 @@ fn case_03_clip_moved() {
         .iter()
         .filter(|c| matches!(c, Change::Moved { .. }))
         .collect();
-    assert!(!moved.is_empty(), "expected at least one Moved: {:#?}", changes);
+    assert!(
+        !moved.is_empty(),
+        "expected at least one Moved: {:#?}",
+        changes
+    );
     // c moved from index 2 -> 0.
-    let c_moved = moved.iter().any(|c| matches!(
-        c,
-        Change::Moved { clip, from_index, to_index, .. }
-            if clip.name == "c" && *from_index == 2 && *to_index == 0
-    ));
+    let c_moved = moved.iter().any(|c| {
+        matches!(
+            c,
+            Change::Moved { clip, from_index, to_index, .. }
+                if clip.name == "c" && *from_index == 2 && *to_index == 0
+        )
+    });
     assert!(c_moved, "expected c moved 2->0: {:#?}", moved);
 }
 
@@ -279,7 +291,12 @@ fn case_06_clip_replaced() {
         .collect();
     assert_eq!(replaced.len(), 1, "{:#?}", changes);
     match replaced[0] {
-        Change::Replaced { clip, before_media, after_media, .. } => {
+        Change::Replaced {
+            clip,
+            before_media,
+            after_media,
+            ..
+        } => {
             assert_eq!(clip.name, "intro");
             assert_eq!(before_media.as_deref(), Some("media://intro_v1.mov"));
             assert_eq!(after_media.as_deref(), Some("media://intro_v2.mov"));
@@ -448,8 +465,14 @@ fn case_12_combined_trim_and_add() {
         )],
     );
     let changes = run_diff(before, after);
-    let trimmed = changes.iter().filter(|c| matches!(c, Change::Trimmed { .. })).count();
-    let added = changes.iter().filter(|c| matches!(c, Change::Added { .. })).count();
+    let trimmed = changes
+        .iter()
+        .filter(|c| matches!(c, Change::Trimmed { .. }))
+        .count();
+    let added = changes
+        .iter()
+        .filter(|c| matches!(c, Change::Added { .. }))
+        .count();
     assert_eq!(trimmed, 1, "{:#?}", changes);
     assert_eq!(added, 1, "{:#?}", changes);
 }

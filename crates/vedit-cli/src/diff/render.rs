@@ -3,7 +3,10 @@ use vedit_core::model::{RationalTime, TimeRange};
 
 pub fn render(changes: &[Change]) -> Vec<String> {
     let collapsed = collapse_synced_pairs(changes);
-    collapsed.iter().map(|(c, synced)| render_one(c, *synced)).collect()
+    collapsed
+        .iter()
+        .map(|(c, synced)| render_one(c, *synced))
+        .collect()
 }
 
 /// Detect video/audio mirror pairs and collapse them. Two changes are
@@ -44,28 +47,70 @@ fn mirrors(a: &Change, b: &Change) -> bool {
     use Change::*;
     match (a, b) {
         (
-            Trimmed { clip: ca, before: ba, after: aa, track: ta },
-            Trimmed { clip: cb, before: bb, after: ab, track: tb },
+            Trimmed {
+                clip: ca,
+                before: ba,
+                after: aa,
+                track: ta,
+            },
+            Trimmed {
+                clip: cb,
+                before: bb,
+                after: ab,
+                track: tb,
+            },
         ) => ta != tb && ca.name == cb.name && ba == bb && aa == ab,
         (
-            Moved { clip: ca, after_neighbor: na, before_neighbor: pa, .. },
-            Moved { clip: cb, after_neighbor: nb, before_neighbor: pb, .. },
-        ) => {
-            ca.name == cb.name
-                && neighbor_names_match(na, nb)
-                && neighbor_names_match(pa, pb)
-        }
+            Moved {
+                clip: ca,
+                after_neighbor: na,
+                before_neighbor: pa,
+                ..
+            },
+            Moved {
+                clip: cb,
+                after_neighbor: nb,
+                before_neighbor: pb,
+                ..
+            },
+        ) => ca.name == cb.name && neighbor_names_match(na, nb) && neighbor_names_match(pa, pb),
         (
-            Added { clip: ca, track: ta, .. },
-            Added { clip: cb, track: tb, .. },
+            Added {
+                clip: ca,
+                track: ta,
+                ..
+            },
+            Added {
+                clip: cb,
+                track: tb,
+                ..
+            },
         ) => ta != tb && ca.name == cb.name,
         (
-            Removed { clip: ca, track: ta, .. },
-            Removed { clip: cb, track: tb, .. },
+            Removed {
+                clip: ca,
+                track: ta,
+                ..
+            },
+            Removed {
+                clip: cb,
+                track: tb,
+                ..
+            },
         ) => ta != tb && ca.name == cb.name,
         (
-            EffectsChanged { clip: ca, before: ba, after: aa, track: ta },
-            EffectsChanged { clip: cb, before: bb, after: ab, track: tb },
+            EffectsChanged {
+                clip: ca,
+                before: ba,
+                after: aa,
+                track: ta,
+            },
+            EffectsChanged {
+                clip: cb,
+                before: bb,
+                after: ab,
+                track: tb,
+            },
         ) => ta != tb && ca.name == cb.name && ba == bb && aa == ab,
         (
             TransitionAdded {
@@ -83,10 +128,7 @@ fn mirrors(a: &Change, b: &Change) -> bool {
                 ..
             },
         ) => {
-            ta != tb
-                && neighbor_names_match(ba1, bb1)
-                && neighbor_names_match(ba2, bb2)
-                && da == db
+            ta != tb && neighbor_names_match(ba1, bb1) && neighbor_names_match(ba2, bb2) && da == db
         }
         (
             TransitionRemoved {
@@ -101,11 +143,7 @@ fn mirrors(a: &Change, b: &Change) -> bool {
                 track: tb,
                 ..
             },
-        ) => {
-            ta != tb
-                && neighbor_names_match(ba1, bb1)
-                && neighbor_names_match(ba2, bb2)
-        }
+        ) => ta != tb && neighbor_names_match(ba1, bb1) && neighbor_names_match(ba2, bb2),
         _ => false,
     }
 }
@@ -127,7 +165,12 @@ fn render_one(change: &Change, synced: bool) -> String {
         Change::TrackRemoved { name, kind } => {
             format!("  Removed {} track \"{}\"", track_kind_word(kind), name)
         }
-        Change::Trimmed { clip, before, after, .. } => {
+        Change::Trimmed {
+            clip,
+            before,
+            after,
+            ..
+        } => {
             format!("{}{}", render_trim(clip, before, after), suffix)
         }
         Change::Moved {
@@ -139,7 +182,13 @@ fn render_one(change: &Change, synced: bool) -> String {
             ..
         } => format!(
             "{}{}",
-            render_move(clip, *from_index, *to_index, after_neighbor, before_neighbor),
+            render_move(
+                clip,
+                *from_index,
+                *to_index,
+                after_neighbor,
+                before_neighbor
+            ),
             suffix
         ),
         Change::Added { clip, track, index } => format!(
@@ -156,14 +205,24 @@ fn render_one(change: &Change, synced: bool) -> String {
             index,
             suffix
         ),
-        Change::EffectsChanged { clip, before, after, .. } => format!(
+        Change::EffectsChanged {
+            clip,
+            before,
+            after,
+            ..
+        } => format!(
             "  Effects on \"{}\" changed ({} → {}){}",
             clip_label(clip),
             before,
             after,
             suffix
         ),
-        Change::Replaced { clip, before_media, after_media, .. } => format!(
+        Change::Replaced {
+            clip,
+            before_media,
+            after_media,
+            ..
+        } => format!(
             "{}{}",
             render_replaced(clip, before_media, after_media),
             suffix

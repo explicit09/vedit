@@ -44,7 +44,10 @@ fn timeline_with_clip_count(n: usize) -> serde_json::Value {
     })
 }
 
-fn diff_value(before: &serde_json::Value, after: &serde_json::Value) -> Vec<vedit_core::diff::Change> {
+fn diff_value(
+    before: &serde_json::Value,
+    after: &serde_json::Value,
+) -> Vec<vedit_core::diff::Change> {
     let b = otio::parse_timeline(before).unwrap();
     let a = otio::parse_timeline(after).unwrap();
     diff(&b, &a)
@@ -74,7 +77,10 @@ fn two_changes_joined_with_comma() {
     let changes = diff_value(&before, &after);
     assert_eq!(changes.len(), 2);
     let m = auto_message(&changes);
-    assert!(m.contains(", "), "two-change message should be comma-joined: {m}");
+    assert!(
+        m.contains(", "),
+        "two-change message should be comma-joined: {m}"
+    );
     assert!(m.contains("clip_3"));
     assert!(m.contains("clip_4"));
 }
@@ -86,6 +92,9 @@ fn many_changes_use_summary_with_counts() {
     let changes = diff_value(&before, &after);
     assert_eq!(changes.len(), 5);
     let m = auto_message(&changes);
-    assert!(m.starts_with("5 edits"), "summary should lead with the count: {m}");
+    assert!(
+        m.starts_with("5 edits"),
+        "summary should lead with the count: {m}"
+    );
     assert!(m.contains("addition"), "should mention additions: {m}");
 }

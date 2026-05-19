@@ -97,10 +97,8 @@ fn full_workflow_init_commit_log_show_checkout() {
     // committed.
     let checked_out = repo.read_timeline(&v1_hash).unwrap();
     // After canonicalization, content must match.
-    let original_canonical =
-        serde_json::to_string(&canonical(&v1)).unwrap();
-    let recovered_canonical =
-        serde_json::to_string(&canonical(&checked_out)).unwrap();
+    let original_canonical = serde_json::to_string(&canonical(&v1)).unwrap();
+    let recovered_canonical = serde_json::to_string(&canonical(&checked_out)).unwrap();
     assert_eq!(original_canonical, recovered_canonical);
 
     // HEAD points at c2 via main.
@@ -137,10 +135,7 @@ fn resolve_head_before_first_commit_errors() {
 fn canonical(v: &serde_json::Value) -> serde_json::Value {
     match v {
         serde_json::Value::Object(map) => {
-            let mut entries: Vec<_> = map
-                .iter()
-                .map(|(k, v)| (k.clone(), canonical(v)))
-                .collect();
+            let mut entries: Vec<_> = map.iter().map(|(k, v)| (k.clone(), canonical(v))).collect();
             entries.sort_by(|a, b| a.0.cmp(&b.0));
             let mut out = serde_json::Map::new();
             for (k, v) in entries {

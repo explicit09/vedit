@@ -10,8 +10,8 @@
 //!     and exit non-zero — v0.6 has no in-place resolution UX.
 
 use crate::author;
-use anyhow::{anyhow, bail, Result};
-use vedit_core::merge::{merge as run_merge, MergeOutcome};
+use anyhow::{Result, anyhow, bail};
+use vedit_core::merge::{MergeOutcome, merge as run_merge};
 use vedit_core::object;
 use vedit_core::otio;
 use vedit_core::repo::{HeadState, Repo};
@@ -57,10 +57,7 @@ pub fn run(target: &str, options: MergeOptions) -> Result<()> {
             );
             return Ok(());
         }
-        std::fs::write(
-            repo.root.join("refs/heads").join(&current_branch),
-            format!("{target_hash}\n"),
-        )?;
+        repo.set_branch_target(&current_branch, &target_hash)?;
         println!(
             "Fast-forwarded {current_branch} from {} to {}",
             short(&head_hash),
@@ -118,9 +115,9 @@ pub fn run(target: &str, options: MergeOptions) -> Result<()> {
             let merged_value = synthesize_otio(&repo, &head_hash, &target_hash, &merged_timeline)?;
             let timeline_hash = repo.write_timeline(&merged_value)?;
 
-            let message = options.message.unwrap_or_else(|| {
-                format!("Merge branch '{target}' into {current_branch}")
-            });
+            let message = options
+                .message
+                .unwrap_or_else(|| format!("Merge branch '{target}' into {current_branch}"));
 
             let commit_hash = repo.commit_with_parents(
                 &timeline_hash,
@@ -221,16 +218,18 @@ fn synthesize_otio(
         // Prefer ours's JSON if structurally equal.
         if let Some(t) = ours_index.get(&key)
             && *t == merged_track
-                && let Some(json) = ours_tracks_json.remove(&key) {
-                    new_track_children.push(json);
-                    continue;
-                }
+            && let Some(json) = ours_tracks_json.remove(&key)
+        {
+            new_track_children.push(json);
+            continue;
+        }
         if let Some(t) = theirs_index.get(&key)
             && *t == merged_track
-                && let Some(json) = theirs_tracks_json.remove(&key) {
-                    new_track_children.push(json);
-                    continue;
-                }
+            && let Some(json) = theirs_tracks_json.remove(&key)
+        {
+            new_track_children.push(json);
+            continue;
+        }
         // Fallback: emit a minimal-but-valid Track JSON from our model.
         new_track_children.push(synth_track_json(merged_track));
     }
@@ -300,12 +299,12 @@ fn describe_conflict(kind: &vedit_core::merge::ConflictKind) -> String {
     match kind {
         BothModified => "both branches modified this track".to_string(),
         BothAdded => "both branches added this track with different content".to_string(),
-        DeleteVsModify { deleter: Side::Ours } => {
-            "ours deleted this track but theirs modified it".to_string()
-        }
-        DeleteVsModify { deleter: Side::Theirs } => {
-            "theirs deleted this track but ours modified it".to_string()
-        }
+        DeleteVsModify {
+            deleter: Side::Ours,
+        } => "ours deleted this track but theirs modified it".to_string(),
+        DeleteVsModify {
+            deleter: Side::Theirs,
+        } => "theirs deleted this track but ours modified it".to_string(),
     }
 }
 

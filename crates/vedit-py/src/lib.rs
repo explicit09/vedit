@@ -97,11 +97,7 @@ impl PyRepo {
 
     /// Diff between two refs in this repo (branch name, commit hash, HEAD).
     /// Returns a list of Change objects.
-    fn diff_refs(
-        &self,
-        before_ref: &str,
-        after_ref: &str,
-    ) -> PyResult<Vec<PyChange>> {
+    fn diff_refs(&self, before_ref: &str, after_ref: &str) -> PyResult<Vec<PyChange>> {
         let before_hash = self.inner.resolve(before_ref).map_err(map_err)?;
         let after_hash = self.inner.resolve(after_ref).map_err(map_err)?;
         let before_commit = self.inner.read_commit(&before_hash).map_err(map_err)?;
