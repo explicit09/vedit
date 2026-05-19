@@ -207,7 +207,8 @@ impl From<core_diff::Change> for PyChange {
 impl PyChange {
     /// The change's discriminator: "trimmed", "moved", "added", "removed",
     /// "replaced", "effects_changed", "transition_added",
-    /// "transition_removed", "track_added", "track_removed".
+    /// "transition_removed", "transition_changed", "track_added",
+    /// "track_removed".
     #[getter]
     fn op(&self) -> &'static str {
         match self.inner {
@@ -221,6 +222,7 @@ impl PyChange {
             core_diff::Change::Replaced { .. } => "replaced",
             core_diff::Change::TransitionAdded { .. } => "transition_added",
             core_diff::Change::TransitionRemoved { .. } => "transition_removed",
+            core_diff::Change::TransitionChanged { .. } => "transition_changed",
         }
     }
 

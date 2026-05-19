@@ -144,6 +144,36 @@ fn mirrors(a: &Change, b: &Change) -> bool {
                 ..
             },
         ) => ta != tb && neighbor_names_match(ba1, bb1) && neighbor_names_match(ba2, bb2),
+        (
+            TransitionChanged {
+                between_before: ba1,
+                between_after: ba2,
+                before_name: bna,
+                after_name: ana,
+                before_duration: bda,
+                after_duration: ada,
+                track: ta,
+                ..
+            },
+            TransitionChanged {
+                between_before: bb1,
+                between_after: bb2,
+                before_name: bnb,
+                after_name: anb,
+                before_duration: bdb,
+                after_duration: adb,
+                track: tb,
+                ..
+            },
+        ) => {
+            ta != tb
+                && neighbor_names_match(ba1, bb1)
+                && neighbor_names_match(ba2, bb2)
+                && bna == bnb
+                && ana == anb
+                && bda == bdb
+                && ada == adb
+        }
         _ => false,
     }
 }
@@ -213,8 +243,8 @@ fn render_one(change: &Change, synced: bool) -> String {
         } => format!(
             "  Effects on \"{}\" changed ({} → {}){}",
             clip_label(clip),
-            before,
-            after,
+            effect_summary(before),
+            effect_summary(after),
             suffix
         ),
         Change::Replaced {
@@ -248,7 +278,47 @@ fn render_one(change: &Change, synced: bool) -> String {
             render_transition_removed(between_before, between_after, name),
             suffix
         ),
+        Change::TransitionChanged {
+            between_before,
+            between_after,
+            before_name,
+            after_name,
+            before_duration,
+            after_duration,
+            ..
+        } => format!(
+            "{}{}",
+            render_transition_changed(
+                between_before,
+                between_after,
+                before_name,
+                after_name,
+                before_duration,
+                after_duration
+            ),
+            suffix
+        ),
     }
+}
+
+fn effect_summary(effects: &[vedit_core::model::Effect]) -> String {
+    if effects.is_empty() {
+        return "none".to_string();
+    }
+    effects
+        .iter()
+        .map(|effect| {
+            if effect.name.is_empty() {
+                effect
+                    .effect_name
+                    .clone()
+                    .unwrap_or_else(|| "unnamed".to_string())
+            } else {
+                effect.name.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn render_replaced(
@@ -365,6 +435,37 @@ fn render_transition_removed(
         name.to_string()
     };
     format!("  Removed {} {}", label, endpoints)
+}
+
+fn render_transition_changed(
+    before: &Option<ClipRef>,
+    after: &Option<ClipRef>,
+    before_name: &str,
+    after_name: &str,
+    before_duration: &Option<RationalTime>,
+    after_duration: &Option<RationalTime>,
+) -> String {
+    let left = before.as_ref().map(clip_label).unwrap_or("start");
+    let right = after.as_ref().map(clip_label).unwrap_or("end");
+    format!(
+        "  Changed transition between \"{}\" and \"{}\" ({} {} → {} {})",
+        left,
+        right,
+        transition_name(before_name),
+        fmt_duration(before_duration),
+        transition_name(after_name),
+        fmt_duration(after_duration)
+    )
+}
+
+fn transition_name(name: &str) -> &str {
+    if name.is_empty() { "transition" } else { name }
+}
+
+fn fmt_duration(duration: &Option<RationalTime>) -> String {
+    duration
+        .map(|d| format!("({:.0} frames)", d.frames()))
+        .unwrap_or_else(|| "(unknown duration)".to_string())
 }
 
 fn endpoints_phrase(a: &Option<ClipRef>, b: &Option<ClipRef>) -> String {

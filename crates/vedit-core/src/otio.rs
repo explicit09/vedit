@@ -4,7 +4,9 @@
 //! fields are tolerated. The parser fails only when the document is
 //! structurally not an OTIO timeline.
 
-use crate::model::{Clip, Gap, RationalTime, TimeRange, Timeline, Track, TrackChild, TrackKind};
+use crate::model::{
+    Clip, Effect, Gap, RationalTime, TimeRange, Timeline, Track, TrackChild, TrackKind,
+};
 use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 use std::path::Path;
@@ -126,16 +128,38 @@ fn parse_clip(value: &Value) -> Clip {
         .to_string();
     let source_range = map.get("source_range").and_then(parse_time_range);
     let media_reference = map.get("media_reference").and_then(parse_media_reference);
-    let effect_count = map
+    let effects = map
         .get("effects")
         .and_then(|e| e.as_array())
-        .map(|a| a.len())
-        .unwrap_or(0);
+        .map(|effects| effects.iter().map(parse_effect).collect())
+        .unwrap_or_default();
     Clip {
         name,
         media_reference,
         source_range,
-        effect_count,
+        effects,
+    }
+}
+
+fn parse_effect(value: &Value) -> Effect {
+    let map = value.as_object().cloned().unwrap_or_default();
+    let name = map
+        .get("name")
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let effect_name = map
+        .get("effect_name")
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string());
+    let metadata = map
+        .get("metadata")
+        .cloned()
+        .unwrap_or_else(|| Value::Object(Default::default()));
+    Effect {
+        name,
+        effect_name,
+        metadata,
     }
 }
 

@@ -7,7 +7,7 @@
 //! ID. That choice is what makes vedit work on OTIO from any source,
 //! including editors that strip third-party metadata.
 
-use crate::model::{Clip, RationalTime, TimeRange, Timeline, Track, TrackChild, TrackKind};
+use crate::model::{Clip, Effect, RationalTime, TimeRange, Timeline, Track, TrackChild, TrackKind};
 use serde::{Deserialize, Serialize};
 
 /// One unit of change between two timelines. The shape is designed to be
@@ -54,12 +54,12 @@ pub enum Change {
         track: String,
         index: usize,
     },
-    /// Effect count on a matched clip changed.
+    /// Effects on a matched clip changed.
     EffectsChanged {
         clip: ClipRef,
         track: String,
-        before: usize,
-        after: usize,
+        before: Vec<Effect>,
+        after: Vec<Effect>,
     },
     /// A clip kept its name and position but its media reference changed.
     /// This is the "I dropped a different take onto the same clip slot"
@@ -84,6 +84,17 @@ pub enum Change {
         between_before: Option<ClipRef>,
         between_after: Option<ClipRef>,
         name: String,
+    },
+    /// Transition remained between the same adjacent clips, but its
+    /// identity or duration changed.
+    TransitionChanged {
+        track: String,
+        between_before: Option<ClipRef>,
+        between_after: Option<ClipRef>,
+        before_name: String,
+        after_name: String,
+        before_duration: Option<RationalTime>,
+        after_duration: Option<RationalTime>,
     },
 }
 
@@ -281,13 +292,13 @@ fn diff_track(before: &Track, after: &Track, out: &mut Vec<Change>) {
             });
         }
 
-        // Effect count delta.
-        if b_clip.effect_count != a_clip.effect_count {
+        // Effect identity / metadata delta.
+        if b_clip.effects != a_clip.effects {
             out.push(Change::EffectsChanged {
                 clip: a_clip.into(),
                 track: track_name.clone(),
-                before: b_clip.effect_count,
-                after: a_clip.effect_count,
+                before: b_clip.effects.clone(),
+                after: a_clip.effects.clone(),
             });
         }
 
@@ -358,8 +369,34 @@ fn diff_transitions(
         let before_neighbor: Option<ClipRef> =
             before_clips.get(*b_pos + 1).map(|(_, c)| (*c).into());
         let after_neighbor: Option<ClipRef> = after_clips.get(*a_pos + 1).map(|(_, c)| (*c).into());
-        let this_clip: ClipRef = before_clips[*b_pos].1.into();
-        let _ = this_clip; // not used currently; kept for symmetry
+        let same_right_neighbor = same_transition_right_neighbor(
+            matches,
+            *b_pos,
+            *a_pos,
+            before_clips.len(),
+            after_clips.len(),
+        );
+
+        if !same_right_neighbor {
+            if let Some(t) = b_t {
+                out.push(Change::TransitionRemoved {
+                    track: track_name.to_string(),
+                    between_before: Some(before_clips[*b_pos].1.into()),
+                    between_after: before_neighbor.clone(),
+                    name: t.name.clone(),
+                });
+            }
+            if let Some(t) = a_t {
+                out.push(Change::TransitionAdded {
+                    track: track_name.to_string(),
+                    between_before: Some(after_clips[*a_pos].1.into()),
+                    between_after: after_neighbor.clone(),
+                    name: t.name.clone(),
+                    duration: t.duration,
+                });
+            }
+            continue;
+        }
 
         match (b_t, a_t) {
             (None, Some(t)) => out.push(Change::TransitionAdded {
@@ -375,8 +412,37 @@ fn diff_transitions(
                 between_after: before_neighbor.clone(),
                 name: t.name.clone(),
             }),
+            (Some(before_t), Some(after_t)) if before_t != after_t => {
+                out.push(Change::TransitionChanged {
+                    track: track_name.to_string(),
+                    between_before: Some(after_clips[*a_pos].1.into()),
+                    between_after: after_neighbor.clone(),
+                    before_name: before_t.name.clone(),
+                    after_name: after_t.name.clone(),
+                    before_duration: before_t.duration,
+                    after_duration: after_t.duration,
+                });
+            }
             _ => {}
         }
+    }
+}
+
+fn same_transition_right_neighbor(
+    matches: &[(usize, usize)],
+    b_pos: usize,
+    a_pos: usize,
+    before_clip_count: usize,
+    after_clip_count: usize,
+) -> bool {
+    let before_next = b_pos + 1 < before_clip_count;
+    let after_next = a_pos + 1 < after_clip_count;
+    match (before_next, after_next) {
+        (false, false) => true,
+        (true, true) => matches
+            .iter()
+            .any(|(b, a)| *b == b_pos + 1 && *a == a_pos + 1),
+        _ => false,
     }
 }
 
@@ -581,7 +647,12 @@ fn verb_phrase(change: &Change) -> String {
             after,
             ..
         } => {
-            format!("effects on \"{}\" {}→{}", clip.name, before, after)
+            format!(
+                "effects on \"{}\" {}→{}",
+                clip.name,
+                before.len(),
+                after.len()
+            )
         }
         Change::Replaced { clip, .. } => format!("replaced media on \"{}\"", clip.name),
         Change::TransitionAdded { name, .. } => {
@@ -598,6 +669,17 @@ fn verb_phrase(change: &Change) -> String {
                 format!("removed {name}")
             }
         }
+        Change::TransitionChanged {
+            before_name,
+            after_name,
+            ..
+        } => {
+            if before_name == after_name {
+                format!("changed {after_name}")
+            } else {
+                format!("changed {before_name} to {after_name}")
+            }
+        }
     }
 }
 
@@ -610,6 +692,7 @@ fn summary_phrase(changes: &[Change]) -> String {
     let mut effects = 0u32;
     let mut transitions_added = 0u32;
     let mut transitions_removed = 0u32;
+    let mut transitions_changed = 0u32;
     let mut tracks_added = 0u32;
     let mut tracks_removed = 0u32;
 
@@ -623,6 +706,7 @@ fn summary_phrase(changes: &[Change]) -> String {
             Change::EffectsChanged { .. } => effects += 1,
             Change::TransitionAdded { .. } => transitions_added += 1,
             Change::TransitionRemoved { .. } => transitions_removed += 1,
+            Change::TransitionChanged { .. } => transitions_changed += 1,
             Change::TrackAdded { .. } => tracks_added += 1,
             Change::TrackRemoved { .. } => tracks_removed += 1,
         }
@@ -652,6 +736,12 @@ fn summary_phrase(changes: &[Change]) -> String {
         transitions_removed,
         "transition removed",
         "transitions removed",
+    );
+    push(
+        &mut parts,
+        transitions_changed,
+        "transition changed",
+        "transitions changed",
     );
     push(&mut parts, tracks_added, "track added", "tracks added");
     push(

@@ -260,7 +260,7 @@ mod tests {
                 start_time: rt(0.0),
                 duration: rt(24.0),
             }),
-            effect_count: 0,
+            effects: Vec::new(),
         })
     }
 

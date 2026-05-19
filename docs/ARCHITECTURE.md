@@ -82,8 +82,8 @@ Output shape is the same for humans and agents — a list of structured changes:
 - `Added { clip, track, index }`
 - `Removed { clip, track, index }`
 - `Replaced { clip, before_media, after_media }`
-- `EffectsChanged { clip, before_count, after_count }`
-- `TransitionAdded` / `TransitionRemoved`
+- `EffectsChanged { clip, before, after }`
+- `TransitionAdded` / `TransitionRemoved` / `TransitionChanged`
 - `TrackAdded` / `TrackRemoved`
 
 The CLI renders these as prose; `--json` and the Python bindings hand them back as structured objects. Same engine, two surfaces.
@@ -92,7 +92,7 @@ The renderer collapses video/audio mirror pairs (most edits in Resolve happen on
 
 ## Round-trip fidelity
 
-vedit re-emits canonical OTIO when you `checkout` a commit. The recovered file is **semantically identical** to the original — every clip, range, media reference, transition, effect count, and Resolve metadata block is preserved. It is **not byte-identical**: whitespace, key ordering, and floating-point string representations get normalized. In one round-trip on a real Resolve project the file shrank ~35%, and the recovered timeline opened cleanly when re-imported.
+vedit re-emits canonical OTIO when you `checkout` a commit. The recovered file is **semantically identical** to the original — every clip, range, media reference, transition, effect, and Resolve metadata block is preserved. It is **not byte-identical**: whitespace, key ordering, and floating-point string representations get normalized. In one round-trip on a real Resolve project the file shrank ~35%, and the recovered timeline opened cleanly when re-imported.
 
 Editor-internal data that doesn't appear in OTIO (color grades, render-cache hints, Fusion compositions in some cases) is never seen by vedit and isn't preserved. Treat vedit as a snapshot tool for your timeline, not a replacement for your `.drp` / `.prproj` project file.
 

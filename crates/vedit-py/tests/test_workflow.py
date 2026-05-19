@@ -210,6 +210,62 @@ def test_change_objects_are_iterable_and_have_op_and_dict():
         assert d["op"] == c.op
 
 
+def test_python_exposes_richer_effect_and_transition_changes():
+    before = make_timeline("doc", 2)
+    after = make_timeline("doc", 2)
+
+    before_children = before["tracks"]["children"][0]["children"]
+    after_children = after["tracks"]["children"][0]["children"]
+
+    before_children[0]["effects"] = [
+        {
+            "OTIO_SCHEMA": "Effect.1",
+            "name": "blur",
+            "metadata": {"radius": 4},
+        }
+    ]
+    after_children[0]["effects"] = [
+        {
+            "OTIO_SCHEMA": "Effect.1",
+            "name": "blur",
+            "metadata": {"radius": 12},
+        }
+    ]
+
+    before_children.insert(
+        1,
+        {
+            "OTIO_SCHEMA": "Transition.1",
+            "name": "crossfade",
+            "in_offset": {"OTIO_SCHEMA": "RationalTime.1", "value": 6.0, "rate": 24.0},
+            "out_offset": {"OTIO_SCHEMA": "RationalTime.1", "value": 6.0, "rate": 24.0},
+            "metadata": {},
+        },
+    )
+    after_children.insert(
+        1,
+        {
+            "OTIO_SCHEMA": "Transition.1",
+            "name": "dip to black",
+            "in_offset": {"OTIO_SCHEMA": "RationalTime.1", "value": 12.0, "rate": 24.0},
+            "out_offset": {"OTIO_SCHEMA": "RationalTime.1", "value": 12.0, "rate": 24.0},
+            "metadata": {},
+        },
+    )
+
+    changes = {change.op: change.to_dict() for change in vedit.diff(before, after)}
+
+    effect = changes["effects_changed"]
+    assert effect["before"][0]["metadata"]["radius"] == 4
+    assert effect["after"][0]["metadata"]["radius"] == 12
+
+    transition = changes["transition_changed"]
+    assert transition["before_name"] == "crossfade"
+    assert transition["after_name"] == "dip to black"
+    assert transition["before_duration"]["value"] == 12.0
+    assert transition["after_duration"]["value"] == 24.0
+
+
 def test_python_reads_commit_made_by_cli(vedit_bin):
     with tempfile.TemporaryDirectory() as tmp:
         workdir = pathlib.Path(tmp)
