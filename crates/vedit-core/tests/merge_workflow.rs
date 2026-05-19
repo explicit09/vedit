@@ -3,7 +3,7 @@
 use serde_json::json;
 use tempfile::tempdir;
 use vedit_core::commit::Author;
-use vedit_core::merge::{merge as run_merge, MergeOutcome};
+use vedit_core::merge::{MergeOutcome, merge as run_merge};
 use vedit_core::otio;
 use vedit_core::repo::Repo;
 
@@ -112,11 +112,8 @@ fn three_way_clean_merge_combines_disjoint_changes() {
     // ours adds A1 track
     // theirs adds clip b to V1
     // merge should produce: V1 with [a, b], A1 added
-    let base_tl = otio::parse_timeline(&timeline_with_tracks(vec![video_track(
-        "V1",
-        vec!["a"],
-    )]))
-    .unwrap();
+    let base_tl =
+        otio::parse_timeline(&timeline_with_tracks(vec![video_track("V1", vec!["a"])])).unwrap();
     let ours_tl = otio::parse_timeline(&timeline_with_tracks(vec![
         video_track("V1", vec!["a"]),
         audio_track("A1", vec![]),
@@ -149,11 +146,8 @@ fn three_way_clean_merge_combines_disjoint_changes() {
 
 #[test]
 fn three_way_conflict_when_both_modify_same_track() {
-    let base_tl = otio::parse_timeline(&timeline_with_tracks(vec![video_track(
-        "V1",
-        vec!["a"],
-    )]))
-    .unwrap();
+    let base_tl =
+        otio::parse_timeline(&timeline_with_tracks(vec![video_track("V1", vec!["a"])])).unwrap();
     let ours_tl = otio::parse_timeline(&timeline_with_tracks(vec![video_track(
         "V1",
         vec!["a", "b"],

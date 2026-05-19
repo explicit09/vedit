@@ -31,9 +31,7 @@ pub fn run(refstr: &str, output: Option<&Path>) -> Result<()> {
 
     // Branch-switch mode. The ref must be a branch.
     if repo.branch_target(refstr)?.is_none() {
-        anyhow::bail!(
-            "{refstr} is not a branch. Use `-o <path>` to write a timeline by hash."
-        );
+        anyhow::bail!("{refstr} is not a branch. Use `-o <path>` to write a timeline by hash.");
     }
     repo.switch_branch(refstr)?;
     println!("Switched to branch {refstr}");

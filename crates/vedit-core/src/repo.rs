@@ -1,15 +1,20 @@
 //! Repository operations: init, ref resolution, commit, log walking.
 
+use crate::atomic;
 use crate::commit::{Author, Commit};
 use crate::object;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use chrono::Utc;
 use serde_json::Value;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const VEDIT_DIR: &str = ".vedit";
 pub const DEFAULT_BRANCH: &str = "main";
 const HEAD_FILE: &str = "HEAD";
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// A vedit repository rooted at some directory.
 #[derive(Debug, Clone)]
@@ -33,7 +38,7 @@ impl Repo {
         // HEAD points at refs/heads/main symbolically. The branch ref does
         // not exist yet — it will be written by the first commit.
         let head_contents = format!("ref: refs/heads/{DEFAULT_BRANCH}\n");
-        std::fs::write(root.join(HEAD_FILE), head_contents)?;
+        write_text_atomic(&root.join(HEAD_FILE), &head_contents)?;
 
         Ok(Self { root })
     }
@@ -117,6 +122,9 @@ impl Repo {
                 continue;
             }
             let name = entry.file_name().to_string_lossy().into_owned();
+            if validate_branch_name(&name).is_err() {
+                continue;
+            }
             if let Some(target) = self.branch_target(&name)? {
                 out.push((name, target));
             }
@@ -145,8 +153,19 @@ impl Repo {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&path, format!("{target}\n"))?;
+        write_text_atomic(&path, &format!("{target}\n"))?;
         Ok(target)
+    }
+
+    /// Atomically repoint an existing branch at a resolved commit.
+    pub fn set_branch_target(&self, name: &str, target: &str) -> Result<()> {
+        validate_branch_name(name)?;
+        let path = self.branch_path(name);
+        if !path.exists() {
+            bail!("branch {name} does not exist");
+        }
+        let target = self.resolve(target)?;
+        write_text_atomic(&path, &format!("{target}\n"))
     }
 
     /// Delete a branch. Refuses to delete the branch HEAD currently points
@@ -159,8 +178,7 @@ impl Repo {
         if !path.exists() {
             bail!("branch {name} does not exist");
         }
-        std::fs::remove_file(&path)
-            .with_context(|| format!("removing {}", path.display()))?;
+        std::fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
         Ok(())
     }
 
@@ -171,7 +189,7 @@ impl Repo {
         if !path.exists() {
             bail!("branch {name} does not exist");
         }
-        std::fs::write(self.head_path(), format!("ref: refs/heads/{name}\n"))?;
+        write_text_atomic(&self.head_path(), &format!("ref: refs/heads/{name}\n"))?;
         Ok(())
     }
 
@@ -253,8 +271,8 @@ impl Repo {
     /// Read a commit by hash.
     pub fn read_commit(&self, hash: &str) -> Result<Commit> {
         let v = object::read(&self.objects_dir(), hash)?;
-        let commit: Commit = serde_json::from_value(v)
-            .with_context(|| format!("parsing commit {hash}"))?;
+        let commit: Commit =
+            serde_json::from_value(v).with_context(|| format!("parsing commit {hash}"))?;
         if commit.schema != Commit::SCHEMA {
             bail!(
                 "commit {hash} has unsupported schema {:?} (expected {})",
@@ -268,12 +286,7 @@ impl Repo {
     /// Create a commit object pointing at `timeline_hash`, parented at
     /// the current HEAD (if any), and update HEAD's branch to point at
     /// it. Returns the new commit's hash.
-    pub fn commit(
-        &self,
-        timeline_hash: &str,
-        author: Author,
-        message: &str,
-    ) -> Result<String> {
+    pub fn commit(&self, timeline_hash: &str, author: Author, message: &str) -> Result<String> {
         let parent = match self.head()? {
             HeadState::Branch(name) => self.branch_target(&name)?,
             HeadState::Detached(_) => {
@@ -299,7 +312,7 @@ impl Repo {
             if let Some(parent_dir) = path.parent() {
                 std::fs::create_dir_all(parent_dir)?;
             }
-            std::fs::write(&path, format!("{commit_hash}\n"))?;
+            write_text_atomic(&path, &format!("{commit_hash}\n"))?;
         }
 
         Ok(commit_hash)
@@ -320,9 +333,7 @@ impl Repo {
             timeline_hash.to_string(),
             parents,
             author,
-            chrono::Utc::now()
-                .format("%Y-%m-%dT%H:%M:%SZ")
-                .to_string(),
+            chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
             message.to_string(),
         );
         let commit_value = serde_json::to_value(&commit)?;
@@ -333,7 +344,7 @@ impl Repo {
             if let Some(parent_dir) = path.parent() {
                 std::fs::create_dir_all(parent_dir)?;
             }
-            std::fs::write(&path, format!("{commit_hash}\n"))?;
+            write_text_atomic(&path, &format!("{commit_hash}\n"))?;
         }
 
         Ok(commit_hash)
@@ -376,10 +387,8 @@ impl Repo {
             return Ok(Some(a_hash));
         }
 
-        let mut a_ancestors: std::collections::BTreeSet<String> =
-            std::collections::BTreeSet::new();
-        let mut frontier: std::collections::VecDeque<String> =
-            std::collections::VecDeque::new();
+        let mut a_ancestors: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut frontier: std::collections::VecDeque<String> = std::collections::VecDeque::new();
         frontier.push_back(a_hash);
         while let Some(h) = frontier.pop_front() {
             if !a_ancestors.insert(h.clone()) {
@@ -391,10 +400,8 @@ impl Repo {
             }
         }
 
-        let mut b_seen: std::collections::BTreeSet<String> =
-            std::collections::BTreeSet::new();
-        let mut frontier: std::collections::VecDeque<String> =
-            std::collections::VecDeque::new();
+        let mut b_seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut frontier: std::collections::VecDeque<String> = std::collections::VecDeque::new();
         frontier.push_back(b_hash);
         while let Some(h) = frontier.pop_front() {
             if !b_seen.insert(h.clone()) {
@@ -442,6 +449,44 @@ fn validate_branch_name(name: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn write_text_atomic(path: &Path, contents: &str) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("path has no parent: {}", path.display()))?;
+    std::fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+
+    let tmp_path = temp_path_for(path);
+    let mut tmp = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp_path)
+        .with_context(|| format!("creating temp file {}", tmp_path.display()))?;
+    tmp.write_all(contents.as_bytes())
+        .with_context(|| format!("writing {}", tmp_path.display()))?;
+    tmp.sync_all()
+        .with_context(|| format!("syncing {}", tmp_path.display()))?;
+    drop(tmp);
+
+    if let Err(e) = atomic::replace_file(&tmp_path, path) {
+        let _ = std::fs::remove_file(&tmp_path);
+        return Err(e);
+    }
+    sync_parent_dir(parent);
+    Ok(())
+}
+
+fn temp_path_for(path: &Path) -> PathBuf {
+    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("ref");
+    let n = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    path.with_file_name(format!(".{file_name}.tmp.{}.{}", std::process::id(), n))
+}
+
+fn sync_parent_dir(path: &Path) {
+    if let Ok(dir) = std::fs::File::open(path) {
+        let _ = dir.sync_all();
+    }
 }
 
 #[cfg(test)]
@@ -570,7 +615,10 @@ mod tests {
         let c = repo.commit(&t, fake_author(), "v").unwrap();
 
         repo.create_branch("alt", "HEAD").unwrap();
-        assert_eq!(repo.branch_target("alt").unwrap().as_deref(), Some(c.as_str()));
+        assert_eq!(
+            repo.branch_target("alt").unwrap().as_deref(),
+            Some(c.as_str())
+        );
 
         // List shows both.
         let list = repo.list_branches().unwrap();
@@ -631,14 +679,62 @@ mod tests {
         let alt_c2 = repo.commit(&t2, fake_author(), "v2 on alt").unwrap();
 
         // main still at v1; alt now at v2.
-        assert_eq!(repo.branch_target("main").unwrap().as_deref(), Some(main_c1.as_str()));
-        assert_eq!(repo.branch_target("alt").unwrap().as_deref(), Some(alt_c2.as_str()));
+        assert_eq!(
+            repo.branch_target("main").unwrap().as_deref(),
+            Some(main_c1.as_str())
+        );
+        assert_eq!(
+            repo.branch_target("alt").unwrap().as_deref(),
+            Some(alt_c2.as_str())
+        );
 
         // Logs differ.
         let main_log = repo.log(Some("main")).unwrap();
         let alt_log = repo.log(Some("alt")).unwrap();
         assert_eq!(main_log.len(), 1);
         assert_eq!(alt_log.len(), 2);
+    }
+
+    #[test]
+    fn set_branch_target_updates_existing_branch() {
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
+            .unwrap();
+        let c1 = repo.commit(&t, fake_author(), "c1").unwrap();
+        let c2 = repo.commit(&t, fake_author(), "c2").unwrap();
+
+        repo.set_branch_target("main", &c1).unwrap();
+        assert_eq!(
+            repo.branch_target("main").unwrap().as_deref(),
+            Some(c1.as_str())
+        );
+
+        repo.set_branch_target("main", &c2).unwrap();
+        assert_eq!(
+            repo.branch_target("main").unwrap().as_deref(),
+            Some(c2.as_str())
+        );
+    }
+
+    #[test]
+    fn list_branches_ignores_stale_temp_ref_files() {
+        let dir = tempdir().unwrap();
+        let repo = Repo::init(dir.path()).unwrap();
+        let t = repo
+            .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
+            .unwrap();
+        let c = repo.commit(&t, fake_author(), "v").unwrap();
+
+        std::fs::write(
+            repo.root.join("refs/heads/.main.tmp.123.0"),
+            format!("{c}\n"),
+        )
+        .unwrap();
+
+        let branches = repo.list_branches().unwrap();
+        assert_eq!(branches, vec![("main".to_string(), c)]);
     }
 
     #[test]
@@ -649,7 +745,14 @@ mod tests {
             .write_timeline(&json!({ "OTIO_SCHEMA": "Timeline.1", "name": "v" }))
             .unwrap();
         repo.commit(&t, fake_author(), "v").unwrap();
-        for bad in ["", ".hidden", "with space", "../escape", "trailing/", "//double"] {
+        for bad in [
+            "",
+            ".hidden",
+            "with space",
+            "../escape",
+            "trailing/",
+            "//double",
+        ] {
             assert!(
                 repo.create_branch(bad, "HEAD").is_err(),
                 "should reject {bad:?}"
@@ -669,9 +772,18 @@ mod tests {
         let c2 = repo.commit(&t, fake_author(), "c2").unwrap();
         let c3 = repo.commit(&t, fake_author(), "c3").unwrap();
 
-        assert_eq!(repo.merge_base(&c3, &c1).unwrap().as_deref(), Some(c1.as_str()));
-        assert_eq!(repo.merge_base(&c1, &c3).unwrap().as_deref(), Some(c1.as_str()));
-        assert_eq!(repo.merge_base(&c2, &c2).unwrap().as_deref(), Some(c2.as_str()));
+        assert_eq!(
+            repo.merge_base(&c3, &c1).unwrap().as_deref(),
+            Some(c1.as_str())
+        );
+        assert_eq!(
+            repo.merge_base(&c1, &c3).unwrap().as_deref(),
+            Some(c1.as_str())
+        );
+        assert_eq!(
+            repo.merge_base(&c2, &c2).unwrap().as_deref(),
+            Some(c2.as_str())
+        );
     }
 
     #[test]
@@ -689,11 +801,7 @@ mod tests {
         repo.switch_branch("alt").unwrap();
         // alt diverges from `base` (the parent of main_tip), not from main_tip.
         // Reset alt to point at base.
-        std::fs::write(
-            repo.root.join("refs/heads/alt"),
-            format!("{base}\n"),
-        )
-        .unwrap();
+        repo.set_branch_target("alt", &base).unwrap();
         let alt_tip = repo.commit(&t, fake_author(), "alt extra").unwrap();
 
         let mb = repo.merge_base(&main_tip, &alt_tip).unwrap();

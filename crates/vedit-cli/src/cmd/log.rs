@@ -22,9 +22,10 @@ pub fn run(refstr: &str) -> Result<()> {
         let mut tags: Vec<String> = Vec::new();
         if let Some((head_label, branch_name)) = &head_target
             && let Ok(Some(target)) = repo.branch_target(branch_name)
-                && &target == hash {
-                    tags.push(format!("{head_label} -> {branch_name}"));
-                }
+            && &target == hash
+        {
+            tags.push(format!("{head_label} -> {branch_name}"));
+        }
         let tag_str = if tags.is_empty() {
             String::new()
         } else {

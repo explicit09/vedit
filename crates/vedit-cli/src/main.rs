@@ -7,7 +7,11 @@ mod cmd;
 mod diff;
 
 #[derive(Parser)]
-#[command(name = "vedit", version, about = "Version control for video timelines.")]
+#[command(
+    name = "vedit",
+    version,
+    about = "Version control for video timelines."
+)]
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
@@ -116,7 +120,11 @@ enum Cmd {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Diff { before, after, json } => diff::run(&before, &after, json),
+        Cmd::Diff {
+            before,
+            after,
+            json,
+        } => diff::run(&before, &after, json),
         Cmd::Init => cmd::init::run(),
         Cmd::Commit { timeline, message } => cmd::commit::run(&timeline, message.as_deref()),
         Cmd::Log { refstr } => cmd::log::run(&refstr),
@@ -124,10 +132,11 @@ fn main() -> Result<()> {
         Cmd::Checkout { refstr, output } => cmd::checkout::run(&refstr, output.as_deref()),
         Cmd::Branch { name, delete } => cmd::branch::run(&name, delete),
         Cmd::Branches => cmd::branches::run(),
-        Cmd::Merge { target, message, dry_run } => cmd::merge::run(
-            &target,
-            cmd::merge::MergeOptions { message, dry_run },
-        ),
+        Cmd::Merge {
+            target,
+            message,
+            dry_run,
+        } => cmd::merge::run(&target, cmd::merge::MergeOptions { message, dry_run }),
         Cmd::Watch {
             timeline,
             interval,

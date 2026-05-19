@@ -79,8 +79,7 @@ pub fn merge(base: &Timeline, ours: &Timeline, theirs: &Timeline) -> MergeOutcom
     // Walk the union of keys in a stable order: ours's order first
     // (preserving any reordering ours did), then any new keys theirs
     // introduced that ours didn't have.
-    let mut seen: std::collections::HashSet<(String, TrackKind)> =
-        std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<(String, TrackKind)> = std::collections::HashSet::new();
     let mut merge_order: Vec<&(String, TrackKind)> = Vec::new();
     for t in &ours.tracks {
         let key = (t.name.clone(), t.kind);
@@ -95,9 +94,10 @@ pub fn merge(base: &Timeline, ours: &Timeline, theirs: &Timeline) -> MergeOutcom
     for t in &theirs.tracks {
         let key = (t.name.clone(), t.kind);
         if seen.insert(key.clone())
-            && let Some(stored) = theirs_index.get_key_value(&key) {
-                merge_order.push(stored.0);
-            }
+            && let Some(stored) = theirs_index.get_key_value(&key)
+        {
+            merge_order.push(stored.0);
+        }
     }
     // Tracks that exist only in base (deleted by both) are handled below
     // implicitly: they contribute nothing to merge_order, so they stay
@@ -399,11 +399,7 @@ mod tests {
             TrackKind::Video,
             vec![clip("a", "media://a.mov")],
         )]);
-        let added_track = track(
-            "A1",
-            TrackKind::Audio,
-            vec![clip("vo", "media://vo.wav")],
-        );
+        let added_track = track("A1", TrackKind::Audio, vec![clip("vo", "media://vo.wav")]);
         let ours = timeline(vec![base.tracks[0].clone(), added_track.clone()]);
         let theirs = ours.clone();
         match merge(&base, &ours, &theirs) {
@@ -458,7 +454,9 @@ mod tests {
                 assert_eq!(cs[0].track_name, "A1");
                 assert!(matches!(
                     cs[0].kind,
-                    ConflictKind::DeleteVsModify { deleter: Side::Ours }
+                    ConflictKind::DeleteVsModify {
+                        deleter: Side::Ours
+                    }
                 ));
             }
             other => panic!("expected Conflicts, got {:?}", other),

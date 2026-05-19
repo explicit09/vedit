@@ -1,8 +1,8 @@
 name: release
 
 # Build wheels and an sdist for `pyvedit`.
-# - On push to main / pull requests: build all targets, run Rust tests,
-#   but do not publish.
+# - On push to main / pull requests: build all targets, run Rust/Python
+#   tests plus Rust formatting and clippy checks, but do not publish.
 # - On a `v*` tag (e.g. `v0.0.1`): build all targets, then publish to
 #   PyPI using the PYPI_API_TOKEN secret.
 #
@@ -19,15 +19,41 @@ permissions:
   contents: read
 
 jobs:
-  rust-tests:
-    name: Rust tests
+  rust-checks:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt
+        run: cargo fmt --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --exclude vedit-py -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace --exclude vedit-py
+
+  python-tests:
+    name: Python tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: cargo test
-        run: cargo test --workspace --exclude vedit-py
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Create test venv
+        run: python -m venv .venv
+      - name: Install test tooling
+        run: .venv/bin/python -m pip install --upgrade pip maturin pytest
+      - name: Build extension in place
+        working-directory: crates/vedit-py
+        run: ../../.venv/bin/maturin develop --release
+      - name: pytest
+        run: .venv/bin/python -m pytest crates/vedit-py/tests/
 
   build-linux:
     name: Wheels - Linux ${{ matrix.target }}
@@ -113,7 +139,15 @@ jobs:
 
   publish-to-pypi:
     name: Publish to PyPI
-    needs: [rust-tests, build-linux, build-macos, build-windows, build-sdist]
+    needs:
+      [
+        rust-checks,
+        python-tests,
+        build-linux,
+        build-macos,
+        build-windows,
+        build-sdist,
+      ]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment:
