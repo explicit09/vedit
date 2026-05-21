@@ -1,4 +1,5 @@
 mod atomic;
+pub mod bisect;
 pub mod commit;
 pub mod diff;
 pub mod merge;
