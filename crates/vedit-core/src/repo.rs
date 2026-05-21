@@ -2,7 +2,15 @@
 
 use crate::atomic;
 use crate::commit::{Author, Commit};
+use crate::merge::{
+    ChangedClipIdMergeClean, ChangedClipIdMergeConflict, ChangedClipIdMergeOutcome,
+    changed_clip_ids, merge_non_overlapping_changed_clip_ids,
+};
+use crate::model::{
+    Clip, Effect, Gap, RationalTime, TimeRange, Timeline, Track, TrackChild, TrackKind,
+};
 use crate::object;
+use crate::otio;
 use anyhow::{Context, Result, anyhow, bail};
 use chrono::Utc;
 use serde_json::Value;
@@ -418,6 +426,90 @@ impl Repo {
 
         Ok(None)
     }
+
+    /// Return the stable clip IDs changed by `refstr` relative to its first
+    /// parent. For a root commit, every identifiable clip is reported.
+    pub fn changed_clip_ids(&self, refstr: &str) -> Result<Vec<String>> {
+        let commit_hash = self.resolve(refstr)?;
+        let commit = self.read_commit(&commit_hash)?;
+        let after_value = self.read_timeline(&commit.timeline)?;
+        let after = otio::parse_timeline(&after_value)?;
+        let base = if let Some(parent_hash) = commit.parents.first() {
+            Some(self.parse_commit_timeline(parent_hash)?)
+        } else {
+            None
+        };
+
+        Ok(changed_clip_ids(base.as_ref(), &after))
+    }
+
+    /// Merge `source_ref` into `target_ref` using changed clip IDs as the
+    /// conflict key. Non-overlapping changes are overlaid and committed with
+    /// parents `[target, source]`; overlapping clip IDs return a typed
+    /// conflict without writing a commit.
+    pub fn merge_changed_clip_ids(
+        &self,
+        source_ref: &str,
+        target_ref: &str,
+        author: Author,
+        message: &str,
+    ) -> Result<ChangedClipIdMergeOutcome> {
+        let source_hash = self.resolve(source_ref)?;
+        let target_hash = self.resolve(target_ref)?;
+        let base_hash = self
+            .merge_base(&target_hash, &source_hash)?
+            .ok_or_else(|| anyhow!("no common ancestor between {target_ref} and {source_ref}"))?;
+
+        let base = self.parse_commit_timeline(&base_hash)?;
+        let target = self.parse_commit_timeline(&target_hash)?;
+        let source = self.parse_commit_timeline(&source_hash)?;
+        let source_changed_clip_ids = changed_clip_ids(Some(&base), &source);
+        let target_changed_clip_ids = changed_clip_ids(Some(&base), &target);
+
+        let merged = match merge_non_overlapping_changed_clip_ids(&base, &target, &source) {
+            Ok(merged) => merged,
+            Err(conflict) => {
+                return Ok(ChangedClipIdMergeOutcome::ClipIdConflicts(
+                    ChangedClipIdMergeConflict {
+                        source_ref: source_ref.to_string(),
+                        target_ref: target_ref.to_string(),
+                        source_changed_clip_ids,
+                        target_changed_clip_ids,
+                        overlapping_clip_ids: conflict.overlapping_clip_ids,
+                    },
+                ));
+            }
+        };
+
+        let timeline_hash = self.write_timeline(&timeline_to_otio_value(&merged))?;
+        let parents = vec![target_hash, source_hash];
+        let commit = Commit::new(
+            timeline_hash,
+            parents.clone(),
+            author,
+            Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            message.to_string(),
+        );
+        let commit_hash = self.write_timeline(&serde_json::to_value(&commit)?)?;
+        if self.branch_target(target_ref)?.is_some() {
+            self.set_branch_target(target_ref, &commit_hash)?;
+        }
+
+        Ok(ChangedClipIdMergeOutcome::Clean(ChangedClipIdMergeClean {
+            source_ref: source_ref.to_string(),
+            target_ref: target_ref.to_string(),
+            commit_hash,
+            parents,
+            source_changed_clip_ids,
+            target_changed_clip_ids,
+        }))
+    }
+
+    fn parse_commit_timeline(&self, commit_hash: &str) -> Result<Timeline> {
+        let commit = self.read_commit(commit_hash)?;
+        let value = self.read_timeline(&commit.timeline)?;
+        otio::parse_timeline(&value)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -487,6 +579,109 @@ fn sync_parent_dir(path: &Path) {
     if let Ok(dir) = std::fs::File::open(path) {
         let _ = dir.sync_all();
     }
+}
+
+fn timeline_to_otio_value(timeline: &Timeline) -> Value {
+    serde_json::json!({
+        "OTIO_SCHEMA": "Timeline.1",
+        "name": timeline.name,
+        "tracks": {
+            "OTIO_SCHEMA": "Stack.1",
+            "name": "tracks",
+            "children": timeline.tracks.iter().map(track_to_otio_value).collect::<Vec<_>>(),
+        },
+        "metadata": {}
+    })
+}
+
+fn track_to_otio_value(track: &Track) -> Value {
+    serde_json::json!({
+        "OTIO_SCHEMA": "Track.1",
+        "name": track.name,
+        "kind": match track.kind {
+            TrackKind::Video => "Video",
+            TrackKind::Audio => "Audio",
+            TrackKind::Other => "Other",
+        },
+        "children": track.children.iter().map(track_child_to_otio_value).collect::<Vec<_>>(),
+        "metadata": {}
+    })
+}
+
+fn track_child_to_otio_value(child: &TrackChild) -> Value {
+    match child {
+        TrackChild::Clip(clip) => clip_to_otio_value(clip),
+        TrackChild::Transition(transition) => {
+            let offset = transition.duration.map(|duration| RationalTime {
+                value: duration.value / 2.0,
+                rate: duration.rate,
+            });
+            serde_json::json!({
+                "OTIO_SCHEMA": "Transition.1",
+                "name": transition.name,
+                "in_offset": offset.map(rational_time_to_otio_value),
+                "out_offset": offset.map(rational_time_to_otio_value),
+                "metadata": {}
+            })
+        }
+        TrackChild::Gap(gap) => gap_to_otio_value(gap),
+    }
+}
+
+fn clip_to_otio_value(clip: &Clip) -> Value {
+    let mut metadata = serde_json::Map::new();
+    if let Some(id) = &clip.clip_id {
+        metadata.insert("clip_id".to_string(), Value::String(id.clone()));
+    }
+    serde_json::json!({
+        "OTIO_SCHEMA": "Clip.2",
+        "name": clip.name,
+        "metadata": Value::Object(metadata),
+        "media_reference": clip.media_reference.as_ref().map(|target_url| {
+            serde_json::json!({
+                "OTIO_SCHEMA": "ExternalReference.1",
+                "target_url": target_url,
+            })
+        }),
+        "source_range": clip.source_range.map(time_range_to_otio_value),
+        "effects": clip.effects.iter().map(effect_to_otio_value).collect::<Vec<_>>()
+    })
+}
+
+fn effect_to_otio_value(effect: &Effect) -> Value {
+    serde_json::json!({
+        "OTIO_SCHEMA": "Effect.1",
+        "name": effect.name,
+        "effect_name": effect.effect_name,
+        "metadata": effect.metadata
+    })
+}
+
+fn gap_to_otio_value(gap: &Gap) -> Value {
+    serde_json::json!({
+        "OTIO_SCHEMA": "Gap.1",
+        "source_range": gap.duration.map(|duration| TimeRange {
+            start_time: RationalTime { value: 0.0, rate: duration.rate },
+            duration,
+        }).map(time_range_to_otio_value),
+        "metadata": {}
+    })
+}
+
+fn time_range_to_otio_value(range: TimeRange) -> Value {
+    serde_json::json!({
+        "OTIO_SCHEMA": "TimeRange.1",
+        "start_time": rational_time_to_otio_value(range.start_time),
+        "duration": rational_time_to_otio_value(range.duration),
+    })
+}
+
+fn rational_time_to_otio_value(time: RationalTime) -> Value {
+    serde_json::json!({
+        "OTIO_SCHEMA": "RationalTime.1",
+        "value": time.value,
+        "rate": time.rate,
+    })
 }
 
 #[cfg(test)]

@@ -121,6 +121,7 @@ fn parse_track_child(value: &Value) -> Option<TrackChild> {
 
 fn parse_clip(value: &Value) -> Clip {
     let map = value.as_object().cloned().unwrap_or_default();
+    let clip_id = parse_clip_id(&map);
     let name = map
         .get("name")
         .and_then(|s| s.as_str())
@@ -134,11 +135,45 @@ fn parse_clip(value: &Value) -> Clip {
         .map(|effects| effects.iter().map(parse_effect).collect())
         .unwrap_or_default();
     Clip {
+        clip_id,
         name,
         media_reference,
         source_range,
         effects,
     }
+}
+
+fn parse_clip_id(map: &serde_json::Map<String, Value>) -> Option<String> {
+    for key in ["clip_id", "clipId", "id"] {
+        if let Some(id) = map.get(key).and_then(|v| v.as_str())
+            && !id.is_empty()
+        {
+            return Some(id.to_string());
+        }
+    }
+
+    let metadata = map.get("metadata")?.as_object()?;
+    for key in ["clip_id", "clipId", "id"] {
+        if let Some(id) = metadata.get(key).and_then(|v| v.as_str())
+            && !id.is_empty()
+        {
+            return Some(id.to_string());
+        }
+    }
+
+    for namespace in ["awidat", "vedit"] {
+        if let Some(ns) = metadata.get(namespace).and_then(|v| v.as_object()) {
+            for key in ["clip_id", "clipId", "id"] {
+                if let Some(id) = ns.get(key).and_then(|v| v.as_str())
+                    && !id.is_empty()
+                {
+                    return Some(id.to_string());
+                }
+            }
+        }
+    }
+
+    None
 }
 
 fn parse_effect(value: &Value) -> Effect {
