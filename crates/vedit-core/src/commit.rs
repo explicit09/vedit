@@ -80,15 +80,17 @@ impl<'de> Deserialize<'de> for Commit {
         }
 
         let wire = CommitWire::deserialize(deserializer)?;
+        let author = wire.author;
         let authors = if wire.authors.is_empty() {
-            vec![wire.author]
-        } else {
+            vec![author.clone()]
+        } else if wire.authors.first() == Some(&author) {
             wire.authors
+        } else {
+            let mut authors = Vec::with_capacity(wire.authors.len() + 1);
+            authors.push(author.clone());
+            authors.extend(wire.authors);
+            authors
         };
-        let author = authors
-            .first()
-            .cloned()
-            .ok_or_else(|| serde::de::Error::custom("commit requires at least one author"))?;
         Ok(Self {
             schema: wire.schema,
             timeline: wire.timeline,
@@ -149,5 +151,37 @@ mod tests {
 
         assert_eq!(commit.author.name, "Legacy");
         assert_eq!(commit.authors, vec![commit.author.clone()]);
+    }
+
+    #[test]
+    fn deserializing_mixed_format_keeps_explicit_primary_author() {
+        let value = json!({
+            "schema": Commit::SCHEMA,
+            "timeline": "timeline",
+            "parents": [],
+            "author": {
+                "name": "Primary",
+                "email": "primary@example.com"
+            },
+            "authors": [
+                {
+                    "name": "Co Author",
+                    "email": "co@example.com"
+                }
+            ],
+            "timestamp": "2026-05-21T00:00:00Z",
+            "message": "mixed"
+        });
+
+        let commit: Commit = serde_json::from_value(value).unwrap();
+
+        assert_eq!(commit.author.name, "Primary");
+        assert_eq!(
+            commit.authors,
+            vec![
+                author("Primary", "primary@example.com"),
+                author("Co Author", "co@example.com")
+            ]
+        );
     }
 }
