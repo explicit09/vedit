@@ -16,3 +16,4 @@ Cargo.lock.bak
 /v1.otio
 /v2.otio
 .claude/
+.worktrees/
