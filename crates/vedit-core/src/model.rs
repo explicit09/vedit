@@ -41,6 +41,8 @@ pub enum TrackChild {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clip_id: Option<String>,
     pub name: String,
     pub media_reference: Option<String>,
     pub source_range: Option<TimeRange>,

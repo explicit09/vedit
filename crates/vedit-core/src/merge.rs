@@ -23,8 +23,9 @@
 //! 4. If both sides removed the same track, take the removal.
 
 use crate::diff::diff;
-use crate::model::{Timeline, Track, TrackKind};
+use crate::model::{Clip, Timeline, Track, TrackChild, TrackKind};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Result of a three-way merge attempt.
 #[derive(Debug, Clone, PartialEq)]
@@ -33,6 +34,31 @@ pub enum MergeOutcome {
     Clean(Timeline),
     /// One or more conflicts were detected. Nothing has been written.
     Conflicts(Vec<Conflict>),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ChangedClipIdMergeOutcome {
+    Clean(ChangedClipIdMergeClean),
+    ClipIdConflicts(ChangedClipIdMergeConflict),
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChangedClipIdMergeClean {
+    pub source_ref: String,
+    pub target_ref: String,
+    pub commit_hash: String,
+    pub parents: Vec<String>,
+    pub source_changed_clip_ids: Vec<String>,
+    pub target_changed_clip_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChangedClipIdMergeConflict {
+    pub source_ref: String,
+    pub target_ref: String,
+    pub source_changed_clip_ids: Vec<String>,
+    pub target_changed_clip_ids: Vec<String>,
+    pub overlapping_clip_ids: Vec<String>,
 }
 
 /// A single merge conflict at the track level.
@@ -62,6 +88,58 @@ pub enum ConflictKind {
 pub enum Side {
     Ours,
     Theirs,
+}
+
+pub fn changed_clip_ids(base: Option<&Timeline>, after: &Timeline) -> Vec<String> {
+    let after_clips = clips_by_id(after);
+    let mut changed = BTreeSet::new();
+
+    let Some(base) = base else {
+        return after_clips.keys().cloned().collect();
+    };
+
+    let base_clips = clips_by_id(base);
+    for (id, after_clip) in &after_clips {
+        match base_clips.get(id) {
+            Some(base_clip) if *base_clip == *after_clip => {}
+            _ => {
+                changed.insert(id.clone());
+            }
+        }
+    }
+    for id in base_clips.keys() {
+        if !after_clips.contains_key(id) {
+            changed.insert(id.clone());
+        }
+    }
+
+    changed.into_iter().collect()
+}
+
+pub fn merge_non_overlapping_changed_clip_ids(
+    base: &Timeline,
+    target: &Timeline,
+    source: &Timeline,
+) -> Result<Timeline, ChangedClipIdMergeConflict> {
+    let source_changed = changed_clip_ids(Some(base), source);
+    let target_changed = changed_clip_ids(Some(base), target);
+    let overlap: Vec<String> = source_changed
+        .iter()
+        .filter(|id| target_changed.binary_search(id).is_ok())
+        .cloned()
+        .collect();
+
+    if !overlap.is_empty() {
+        return Err(ChangedClipIdMergeConflict {
+            source_ref: String::new(),
+            target_ref: String::new(),
+            source_changed_clip_ids: source_changed,
+            target_changed_clip_ids: target_changed,
+            overlapping_clip_ids: overlap,
+        });
+    }
+
+    Ok(overlay_clip_id_changes(target, source, &source_changed))
 }
 
 /// Run a three-way merge on three already-parsed timelines.
@@ -243,6 +321,93 @@ fn diff_track(before: &Track, after: &Track) -> Vec<crate::diff::Change> {
     diff(&before_tl, &after_tl)
 }
 
+fn clips_by_id(timeline: &Timeline) -> BTreeMap<String, &Clip> {
+    let mut out = BTreeMap::new();
+    for track in &timeline.tracks {
+        for child in &track.children {
+            if let TrackChild::Clip(clip) = child
+                && let Some(id) = &clip.clip_id
+            {
+                out.insert(id.clone(), clip);
+            }
+        }
+    }
+    out
+}
+
+fn overlay_clip_id_changes(
+    target: &Timeline,
+    source: &Timeline,
+    source_changed: &[String],
+) -> Timeline {
+    let source_changed: BTreeSet<String> = source_changed.iter().cloned().collect();
+    let source_clips = clips_by_id(source);
+    let mut merged = target.clone();
+    let mut applied = BTreeSet::new();
+
+    for track in &mut merged.tracks {
+        for child in &mut track.children {
+            if let TrackChild::Clip(target_clip) = child
+                && let Some(id) = target_clip.clip_id.clone()
+                && source_changed.contains(&id)
+                && let Some(source_clip) = source_clips.get(&id)
+            {
+                *target_clip = (*source_clip).clone();
+                applied.insert(id);
+            }
+        }
+    }
+
+    for source_track in &source.tracks {
+        let source_additions: Vec<TrackChild> = source_track
+            .children
+            .iter()
+            .filter_map(|child| match child {
+                TrackChild::Clip(clip)
+                    if clip
+                        .clip_id
+                        .as_ref()
+                        .is_some_and(|id| source_changed.contains(id) && !applied.contains(id)) =>
+                {
+                    Some(TrackChild::Clip(clip.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        if source_additions.is_empty() {
+            continue;
+        }
+
+        if let Some(target_track) = merged
+            .tracks
+            .iter_mut()
+            .find(|track| track.name == source_track.name && track.kind == source_track.kind)
+        {
+            for child in source_additions {
+                if let TrackChild::Clip(clip) = &child
+                    && let Some(id) = &clip.clip_id
+                {
+                    applied.insert(id.clone());
+                }
+                target_track.children.push(child);
+            }
+        } else {
+            let mut track = source_track.clone();
+            track.children = source_additions;
+            for child in &track.children {
+                if let TrackChild::Clip(clip) = child
+                    && let Some(id) = &clip.clip_id
+                {
+                    applied.insert(id.clone());
+                }
+            }
+            merged.tracks.push(track);
+        }
+    }
+
+    merged
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +419,7 @@ mod tests {
 
     fn clip(name: &str, media: &str) -> TrackChild {
         TrackChild::Clip(Clip {
+            clip_id: None,
             name: name.to_string(),
             media_reference: Some(media.to_string()),
             source_range: Some(TimeRange {
