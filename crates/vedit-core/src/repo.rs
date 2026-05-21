@@ -491,8 +491,15 @@ impl Repo {
             message.to_string(),
         );
         let commit_hash = self.write_timeline(&serde_json::to_value(&commit)?)?;
-        if self.branch_target(target_ref)?.is_some() {
-            self.set_branch_target(target_ref, &commit_hash)?;
+        let target_branch = if target_ref == "HEAD" {
+            self.current_branch()?
+        } else if self.branch_target(target_ref)?.is_some() {
+            Some(target_ref.to_string())
+        } else {
+            None
+        };
+        if let Some(branch) = target_branch {
+            self.set_branch_target(&branch, &commit_hash)?;
         }
 
         Ok(ChangedClipIdMergeOutcome::Clean(ChangedClipIdMergeClean {

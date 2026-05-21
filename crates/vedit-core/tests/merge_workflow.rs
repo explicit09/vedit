@@ -423,3 +423,196 @@ fn changed_clip_id_merge_returns_typed_conflict_for_overlap() {
         Some(target_c.as_str())
     );
 }
+
+#[test]
+fn changed_clip_id_merge_head_target_advances_current_branch() {
+    let dir = tempdir().unwrap();
+    let repo = Repo::init(dir.path()).unwrap();
+    let base_v = repo
+        .write_timeline(&timeline_with_tracks(vec![identified_video_track(
+            "V1",
+            vec![
+                identified_clip("clip-a", 24.0),
+                identified_clip("clip-b", 24.0),
+            ],
+        )]))
+        .unwrap();
+    repo.commit(&base_v, author(), "base").unwrap();
+
+    repo.create_branch("source", "HEAD").unwrap();
+
+    let target_v = repo
+        .write_timeline(&timeline_with_tracks(vec![identified_video_track(
+            "V1",
+            vec![
+                identified_clip("clip-a", 12.0),
+                identified_clip("clip-b", 24.0),
+            ],
+        )]))
+        .unwrap();
+    repo.commit(&target_v, author(), "trim a").unwrap();
+    let before_merge_main = repo.branch_target("main").unwrap().unwrap();
+
+    repo.switch_branch("source").unwrap();
+    let source_v = repo
+        .write_timeline(&timeline_with_tracks(vec![identified_video_track(
+            "V1",
+            vec![
+                identified_clip("clip-a", 24.0),
+                identified_clip("clip-b", 12.0),
+            ],
+        )]))
+        .unwrap();
+    repo.commit(&source_v, author(), "trim b").unwrap();
+
+    repo.switch_branch("main").unwrap();
+    let outcome = repo
+        .merge_changed_clip_ids("source", "HEAD", author(), "merge source into head")
+        .unwrap();
+    let clean = match outcome {
+        ChangedClipIdMergeOutcome::Clean(clean) => clean,
+        other => panic!("expected clean changed-clip-id merge, got {other:?}"),
+    };
+
+    assert_eq!(clean.target_ref, "HEAD");
+    assert_ne!(clean.commit_hash, before_merge_main);
+    assert_eq!(
+        repo.branch_target("main").unwrap().as_deref(),
+        Some(clean.commit_hash.as_str())
+    );
+}
+
+#[test]
+fn changed_clip_id_merge_applies_source_clip_deletions() {
+    let dir = tempdir().unwrap();
+    let repo = Repo::init(dir.path()).unwrap();
+    let base_v = repo
+        .write_timeline(&timeline_with_tracks(vec![identified_video_track(
+            "V1",
+            vec![
+                identified_clip("clip-a", 24.0),
+                identified_clip("clip-b", 24.0),
+            ],
+        )]))
+        .unwrap();
+    repo.commit(&base_v, author(), "base").unwrap();
+
+    repo.create_branch("source", "HEAD").unwrap();
+
+    let target_v = repo
+        .write_timeline(&timeline_with_tracks(vec![identified_video_track(
+            "V1",
+            vec![
+                identified_clip("clip-a", 12.0),
+                identified_clip("clip-b", 24.0),
+            ],
+        )]))
+        .unwrap();
+    repo.commit(&target_v, author(), "trim a").unwrap();
+
+    repo.switch_branch("source").unwrap();
+    let source_v = repo
+        .write_timeline(&timeline_with_tracks(vec![identified_video_track(
+            "V1",
+            vec![identified_clip("clip-a", 24.0)],
+        )]))
+        .unwrap();
+    repo.commit(&source_v, author(), "delete b").unwrap();
+
+    let outcome = repo
+        .merge_changed_clip_ids("source", "main", author(), "merge source into main")
+        .unwrap();
+    let clean = match outcome {
+        ChangedClipIdMergeOutcome::Clean(clean) => clean,
+        other => panic!("expected clean changed-clip-id merge, got {other:?}"),
+    };
+
+    assert_eq!(clean.source_changed_clip_ids, vec!["clip-b".to_string()]);
+    let merge_commit = repo.read_commit(&clean.commit_hash).unwrap();
+    let merged_value = repo.read_timeline(&merge_commit.timeline).unwrap();
+    let merged = otio::parse_timeline(&merged_value).unwrap();
+    let clip_ids: Vec<_> = merged.tracks[0]
+        .children
+        .iter()
+        .filter_map(|child| match child {
+            vedit_core::model::TrackChild::Clip(clip) => clip.clip_id.as_deref(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(clip_ids, vec!["clip-a"]);
+}
+
+#[test]
+fn changed_clip_id_merge_applies_source_clip_reorders() {
+    let dir = tempdir().unwrap();
+    let repo = Repo::init(dir.path()).unwrap();
+    let base_v = repo
+        .write_timeline(&timeline_with_tracks(vec![identified_video_track(
+            "V1",
+            vec![
+                identified_clip("clip-a", 24.0),
+                identified_clip("clip-b", 24.0),
+                identified_clip("clip-c", 24.0),
+            ],
+        )]))
+        .unwrap();
+    repo.commit(&base_v, author(), "base").unwrap();
+
+    repo.create_branch("source", "HEAD").unwrap();
+
+    let target_v = repo
+        .write_timeline(&timeline_with_tracks(vec![identified_video_track(
+            "V1",
+            vec![
+                identified_clip("clip-a", 24.0),
+                identified_clip("clip-b", 24.0),
+                identified_clip("clip-c", 12.0),
+            ],
+        )]))
+        .unwrap();
+    repo.commit(&target_v, author(), "trim c").unwrap();
+
+    repo.switch_branch("source").unwrap();
+    let source_v = repo
+        .write_timeline(&timeline_with_tracks(vec![identified_video_track(
+            "V1",
+            vec![
+                identified_clip("clip-b", 24.0),
+                identified_clip("clip-a", 24.0),
+                identified_clip("clip-c", 24.0),
+            ],
+        )]))
+        .unwrap();
+    repo.commit(&source_v, author(), "move b before a").unwrap();
+
+    let outcome = repo
+        .merge_changed_clip_ids("source", "main", author(), "merge source into main")
+        .unwrap();
+    let clean = match outcome {
+        ChangedClipIdMergeOutcome::Clean(clean) => clean,
+        other => panic!("expected clean changed-clip-id merge, got {other:?}"),
+    };
+
+    assert_eq!(
+        clean.source_changed_clip_ids,
+        vec!["clip-a".to_string(), "clip-b".to_string()]
+    );
+    let merge_commit = repo.read_commit(&clean.commit_hash).unwrap();
+    let merged_value = repo.read_timeline(&merge_commit.timeline).unwrap();
+    let merged = otio::parse_timeline(&merged_value).unwrap();
+    let clips: Vec<_> = merged.tracks[0]
+        .children
+        .iter()
+        .filter_map(|child| match child {
+            vedit_core::model::TrackChild::Clip(clip) => Some((
+                clip.clip_id.as_deref().unwrap(),
+                clip.source_range.unwrap().duration.value,
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        clips,
+        vec![("clip-b", 24.0), ("clip-a", 24.0), ("clip-c", 12.0)]
+    );
+}

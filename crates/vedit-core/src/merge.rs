@@ -91,17 +91,21 @@ pub enum Side {
 }
 
 pub fn changed_clip_ids(base: Option<&Timeline>, after: &Timeline) -> Vec<String> {
-    let after_clips = clips_by_id(after);
+    let after_clips = clip_infos_by_id(after);
     let mut changed = BTreeSet::new();
 
     let Some(base) = base else {
         return after_clips.keys().cloned().collect();
     };
 
-    let base_clips = clips_by_id(base);
-    for (id, after_clip) in &after_clips {
+    let base_clips = clip_infos_by_id(base);
+    for (id, after_info) in &after_clips {
         match base_clips.get(id) {
-            Some(base_clip) if *base_clip == *after_clip => {}
+            Some(base_info)
+                if base_info.clip == after_info.clip
+                    && base_info.track_name == after_info.track_name
+                    && base_info.track_kind == after_info.track_kind
+                    && base_info.clip_index == after_info.clip_index => {}
             _ => {
                 changed.insert(id.clone());
             }
@@ -321,14 +325,31 @@ fn diff_track(before: &Track, after: &Track) -> Vec<crate::diff::Change> {
     diff(&before_tl, &after_tl)
 }
 
-fn clips_by_id(timeline: &Timeline) -> BTreeMap<String, &Clip> {
+struct ClipInfo<'a> {
+    clip: &'a Clip,
+    track_name: String,
+    track_kind: TrackKind,
+    clip_index: usize,
+}
+
+fn clip_infos_by_id(timeline: &Timeline) -> BTreeMap<String, ClipInfo<'_>> {
     let mut out = BTreeMap::new();
     for track in &timeline.tracks {
+        let mut clip_index = 0;
         for child in &track.children {
             if let TrackChild::Clip(clip) = child
                 && let Some(id) = &clip.clip_id
             {
-                out.insert(id.clone(), clip);
+                out.insert(
+                    id.clone(),
+                    ClipInfo {
+                        clip,
+                        track_name: track.name.clone(),
+                        track_kind: track.kind,
+                        clip_index,
+                    },
+                );
+                clip_index += 1;
             }
         }
     }
@@ -341,25 +362,20 @@ fn overlay_clip_id_changes(
     source_changed: &[String],
 ) -> Timeline {
     let source_changed: BTreeSet<String> = source_changed.iter().cloned().collect();
-    let source_clips = clips_by_id(source);
     let mut merged = target.clone();
-    let mut applied = BTreeSet::new();
 
     for track in &mut merged.tracks {
-        for child in &mut track.children {
-            if let TrackChild::Clip(target_clip) = child
-                && let Some(id) = target_clip.clip_id.clone()
-                && source_changed.contains(&id)
-                && let Some(source_clip) = source_clips.get(&id)
-            {
-                *target_clip = (*source_clip).clone();
-                applied.insert(id);
-            }
-        }
+        track.children.retain(|child| match child {
+            TrackChild::Clip(clip) => clip
+                .clip_id
+                .as_ref()
+                .is_none_or(|id| !source_changed.contains(id)),
+            _ => true,
+        });
     }
 
     for source_track in &source.tracks {
-        let source_additions: Vec<TrackChild> = source_track
+        let source_changes: Vec<Clip> = source_track
             .children
             .iter()
             .filter_map(|child| match child {
@@ -367,45 +383,88 @@ fn overlay_clip_id_changes(
                     if clip
                         .clip_id
                         .as_ref()
-                        .is_some_and(|id| source_changed.contains(id) && !applied.contains(id)) =>
+                        .is_some_and(|id| source_changed.contains(id)) =>
                 {
-                    Some(TrackChild::Clip(clip.clone()))
+                    Some(clip.clone())
                 }
                 _ => None,
             })
             .collect();
-        if source_additions.is_empty() {
+        if source_changes.is_empty() {
             continue;
         }
 
-        if let Some(target_track) = merged
-            .tracks
-            .iter_mut()
-            .find(|track| track.name == source_track.name && track.kind == source_track.kind)
-        {
-            for child in source_additions {
-                if let TrackChild::Clip(clip) = &child
-                    && let Some(id) = &clip.clip_id
-                {
-                    applied.insert(id.clone());
-                }
-                target_track.children.push(child);
-            }
-        } else {
-            let mut track = source_track.clone();
-            track.children = source_additions;
-            for child in &track.children {
-                if let TrackChild::Clip(clip) = child
-                    && let Some(id) = &clip.clip_id
-                {
-                    applied.insert(id.clone());
-                }
-            }
-            merged.tracks.push(track);
+        let target_track = ensure_track(&mut merged, source_track);
+        for clip in source_changes {
+            let insert_at =
+                source_insertion_index(source_track, target_track, &source_changed, &clip)
+                    .unwrap_or(target_track.children.len());
+            target_track
+                .children
+                .insert(insert_at, TrackChild::Clip(clip));
         }
     }
 
     merged
+}
+
+fn ensure_track<'a>(timeline: &'a mut Timeline, source_track: &Track) -> &'a mut Track {
+    if let Some(index) = timeline
+        .tracks
+        .iter()
+        .position(|track| track.name == source_track.name && track.kind == source_track.kind)
+    {
+        return &mut timeline.tracks[index];
+    }
+
+    timeline.tracks.push(Track {
+        name: source_track.name.clone(),
+        kind: source_track.kind,
+        children: Vec::new(),
+    });
+    timeline.tracks.last_mut().unwrap()
+}
+
+fn source_insertion_index(
+    source_track: &Track,
+    target_track: &Track,
+    source_changed: &BTreeSet<String>,
+    clip: &Clip,
+) -> Option<usize> {
+    let source_pos = source_track.children.iter().position(
+        |child| matches!(child, TrackChild::Clip(candidate) if candidate.clip_id == clip.clip_id),
+    )?;
+
+    for child in source_track.children.iter().skip(source_pos + 1) {
+        if let TrackChild::Clip(anchor) = child
+            && let Some(anchor_id) = &anchor.clip_id
+            && !source_changed.contains(anchor_id)
+            && let Some(index) = target_clip_index(target_track, anchor_id)
+        {
+            return Some(index);
+        }
+    }
+
+    for child in source_track.children[..source_pos].iter().rev() {
+        if let TrackChild::Clip(anchor) = child
+            && let Some(anchor_id) = &anchor.clip_id
+            && !source_changed.contains(anchor_id)
+            && let Some(index) = target_clip_index(target_track, anchor_id)
+        {
+            return Some(index + 1);
+        }
+    }
+
+    None
+}
+
+fn target_clip_index(track: &Track, clip_id: &str) -> Option<usize> {
+    track.children.iter().position(|child| {
+        matches!(
+            child,
+            TrackChild::Clip(clip) if clip.clip_id.as_deref() == Some(clip_id)
+        )
+    })
 }
 
 #[cfg(test)]
