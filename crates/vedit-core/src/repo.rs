@@ -295,6 +295,16 @@ impl Repo {
     /// the current HEAD (if any), and update HEAD's branch to point at
     /// it. Returns the new commit's hash.
     pub fn commit(&self, timeline_hash: &str, author: Author, message: &str) -> Result<String> {
+        self.commit_with_authors(timeline_hash, vec![author], message)
+    }
+
+    /// Create a commit with one primary author followed by any co-authors.
+    pub fn commit_with_authors(
+        &self,
+        timeline_hash: &str,
+        authors: Vec<Author>,
+        message: &str,
+    ) -> Result<String> {
         let parent = match self.head()? {
             HeadState::Branch(name) => self.branch_target(&name)?,
             HeadState::Detached(_) => {
@@ -303,13 +313,13 @@ impl Repo {
         };
         let parents = parent.into_iter().collect();
 
-        let commit = Commit::new(
+        let commit = Commit::new_with_authors(
             timeline_hash.to_string(),
             parents,
-            author,
+            authors,
             Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
             message.to_string(),
-        );
+        )?;
         let commit_value = serde_json::to_value(&commit)?;
         let commit_hash = self.write_timeline(&commit_value)?;
         // ^ write_timeline writes any JSON object, not just timelines.
@@ -337,13 +347,23 @@ impl Repo {
         author: Author,
         message: &str,
     ) -> Result<String> {
-        let commit = Commit::new(
+        self.commit_with_parents_and_authors(timeline_hash, parents, vec![author], message)
+    }
+
+    pub fn commit_with_parents_and_authors(
+        &self,
+        timeline_hash: &str,
+        parents: Vec<String>,
+        authors: Vec<Author>,
+        message: &str,
+    ) -> Result<String> {
+        let commit = Commit::new_with_authors(
             timeline_hash.to_string(),
             parents,
-            author,
+            authors,
             chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
             message.to_string(),
-        );
+        )?;
         let commit_value = serde_json::to_value(&commit)?;
         let commit_hash = self.write_timeline(&commit_value)?;
 

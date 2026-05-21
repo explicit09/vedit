@@ -119,10 +119,10 @@ pub fn run(target: &str, options: MergeOptions) -> Result<()> {
                 .message
                 .unwrap_or_else(|| format!("Merge branch '{target}' into {current_branch}"));
 
-            let commit_hash = repo.commit_with_parents(
+            let commit_hash = repo.commit_with_parents_and_authors(
                 &timeline_hash,
                 vec![head_hash.clone(), target_hash.clone()],
-                author::resolve()?,
+                author::resolve_authors()?,
                 &message,
             )?;
 

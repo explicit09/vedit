@@ -158,8 +158,8 @@ fn attempt_commit(
     };
 
     let timeline_hash = repo.write_timeline(&timeline_value)?;
-    let author = author::resolve()?;
-    let commit_hash = repo.commit(&timeline_hash, author, &message)?;
+    let authors = author::resolve_authors()?;
+    let commit_hash = repo.commit_with_authors(&timeline_hash, authors, &message)?;
 
     Ok(Some(CommitRecord {
         commit_hash,

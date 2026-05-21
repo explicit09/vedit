@@ -14,6 +14,9 @@ pub fn run(refstr: &str) -> Result<()> {
 
     println!("commit {}", short(&hash));
     println!("Author: {} <{}>", commit.author.name, commit.author.email);
+    for co_author in commit.authors.iter().skip(1) {
+        println!("Co-author: {} <{}>", co_author.name, co_author.email);
+    }
     println!("Date:   {}", commit.timestamp);
     println!();
     for line in commit.message.lines() {

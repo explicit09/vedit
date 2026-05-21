@@ -32,13 +32,33 @@ pub fn run(refstr: &str) -> Result<()> {
             format!("  ({})", tags.join(", "))
         };
         println!(
-            "{}  {}{}",
+            "{}  {}{}{}",
             short(hash),
             commit.message.lines().next().unwrap_or(""),
+            author_summary(commit),
             tag_str
         );
     }
     Ok(())
+}
+
+fn author_summary(commit: &vedit_core::commit::Commit) -> String {
+    match commit.authors.as_slice() {
+        [] => String::new(),
+        [author] => format!("  by {}", format_author(author)),
+        [author, rest @ ..] => format!(
+            "  by {}; co-authors: {}",
+            format_author(author),
+            rest.iter()
+                .map(format_author)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+fn format_author(author: &vedit_core::commit::Author) -> String {
+    format!("{} <{}>", author.name, author.email)
 }
 
 fn short(hash: &str) -> String {
