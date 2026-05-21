@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use vedit_core::bisect::BisectVerdict;
 
 mod author;
 mod cmd;
@@ -92,6 +93,11 @@ enum Cmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Binary-search history to find the first bad timeline commit.
+    Bisect {
+        #[command(subcommand)]
+        cmd: BisectCmd,
+    },
     /// Watch an OTIO file and auto-commit on change.
     ///
     /// Polls the file's mtime + size, debounces with a settling window,
@@ -117,6 +123,35 @@ enum Cmd {
     },
 }
 
+#[derive(Subcommand)]
+enum BisectCmd {
+    /// Start an interactive bisect between a known good and known bad ref.
+    Start {
+        #[arg(long)]
+        good: String,
+        #[arg(long)]
+        bad: String,
+    },
+    /// Mark the current candidate as good and print the next candidate.
+    Good,
+    /// Mark the current candidate as bad and print the next candidate.
+    Bad,
+    /// Clear saved bisect state.
+    Reset,
+    /// Run a predicate command until the first bad commit is found.
+    ///
+    /// The command gets VEDIT_BISECT_COMMIT set to the candidate hash.
+    /// Exit 0 means good; any non-zero exit status means bad.
+    Run {
+        #[arg(long)]
+        good: String,
+        #[arg(long)]
+        bad: String,
+        #[arg(trailing_var_arg = true, required = true)]
+        predicate: Vec<String>,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
@@ -137,6 +172,17 @@ fn main() -> Result<()> {
             message,
             dry_run,
         } => cmd::merge::run(&target, cmd::merge::MergeOptions { message, dry_run }),
+        Cmd::Bisect { cmd: subcmd } => match subcmd {
+            BisectCmd::Start { good, bad } => cmd::bisect::start(&good, &bad),
+            BisectCmd::Good => cmd::bisect::mark(BisectVerdict::Good),
+            BisectCmd::Bad => cmd::bisect::mark(BisectVerdict::Bad),
+            BisectCmd::Reset => cmd::bisect::reset(),
+            BisectCmd::Run {
+                good,
+                bad,
+                predicate,
+            } => cmd::bisect::run(&good, &bad, &predicate),
+        },
         Cmd::Watch {
             timeline,
             interval,

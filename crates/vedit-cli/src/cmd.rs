@@ -1,3 +1,4 @@
+pub mod bisect;
 pub mod branch;
 pub mod branches;
 pub mod checkout;
