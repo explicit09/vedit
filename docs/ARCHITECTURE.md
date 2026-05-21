@@ -110,6 +110,27 @@ Both projects can coexist. They serve different layers.
 
 Not a video editor. Not media storage. Not a rendering service. Not a collaboration platform. Not an asset manager. vedit is the version-control layer for one OTIO file. Everything above is somebody else's product.
 
+## Review artifact metadata
+
+`vedit-core` exposes a versioned review artifact metadata primitive for downstream systems that generate review packages, rendered previews, or signed reasoning trails from vedit history. This is a shared serialization shape, not a CLI-generated object yet.
+
+The serialized format is canonical JSON-compatible and can be written to the content-addressed object store like any other JSON value. The current schema is `vedit.review_artifact.1`:
+
+```json
+{
+  "schema": "vedit.review_artifact.1",
+  "render_path": "renders/review.mp4",
+  "generated_at": "2026-05-21T07:29:30Z",
+  "source_commit": "sha256:abc...",
+  "timeline": "sha256:def...",
+  "tags": ["review", "agent"],
+  "commit_header": "Trim intro, add crossfade",
+  "reasoning_body": "The edit removes dead air before the first title card."
+}
+```
+
+All fields except `schema` are optional so older or partial artifacts remain readable. `render_path` may be a local path or URI supplied by the package generator. `generated_at` is UTC RFC 3339 / ISO 8601 text. `source_commit` stores the vedit commit hash, while `timeline` stores the timeline object hash, preserving both version-control identity and content identity.
+
 ## License
 
 Apache 2.0.
