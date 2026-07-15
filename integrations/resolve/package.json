@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "DaVinci Resolve workflow integration for Vedit",
+  "main": "main.js",
   "type": "commonjs",
   "scripts": {
     "test": "node --test test/*.test.js"

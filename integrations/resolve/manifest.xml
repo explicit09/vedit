@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BlackmagicDesign>
+  <Plugin>
+    <Id>com.explicit09.vedit.resolve</Id>
+    <Name>Vedit</Name>
+    <Version>0.1.0</Version>
+    <Description>Version history for the active Resolve timeline.</Description>
+    <FilePath>main.js</FilePath>
+  </Plugin>
+</BlackmagicDesign>
