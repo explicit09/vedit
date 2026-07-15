@@ -151,7 +151,9 @@ test('semantic comparison skips an unchanged pending export', async (t) => {
   await fs.writeFile(candidatePath, '{}');
   const calls = [];
   const execFile = successfulExecutor({
-    'diff timeline.otio timeline.pending.otio --json': '[]',
+    log: 'a1b2c3d  Initial commit  by Editor <editor@example.com>  (HEAD -> main)',
+    'checkout HEAD --output timeline.head.otio': '',
+    'diff timeline.head.otio timeline.pending.otio --json': '[]',
   }, calls);
   const runner = createVeditRunner({ binaryPath: '/plugin/bin/vedit', execFile, fsPromises: fs });
 
@@ -162,7 +164,9 @@ test('semantic comparison skips an unchanged pending export', async (t) => {
 
   assert.equal(changed, false);
   assert.deepEqual(calls.map((call) => call.args), [
-    ['diff', 'timeline.otio', 'timeline.pending.otio', '--json'],
+    ['log'],
+    ['checkout', 'HEAD', '--output', 'timeline.head.otio'],
+    ['diff', 'timeline.head.otio', 'timeline.pending.otio', '--json'],
   ]);
 });
 
@@ -175,7 +179,9 @@ test('semantic comparison detects changed pending export', async (t) => {
   await fs.writeFile(timelinePath, '{}');
   await fs.writeFile(candidatePath, '{}');
   const execFile = successfulExecutor({
-    'diff timeline.otio timeline.pending.otio --json': '[{"op":"trimmed"}]',
+    log: 'a1b2c3d  Initial commit  by Editor <editor@example.com>  (HEAD -> main)',
+    'checkout HEAD --output timeline.head.otio': '',
+    'diff timeline.head.otio timeline.pending.otio --json': '[{"op":"trimmed"}]',
   }, []);
   const runner = createVeditRunner({ binaryPath: '/plugin/bin/vedit', execFile, fsPromises: fs });
 
@@ -198,4 +204,44 @@ test('first pending export is always treated as changed', async (t) => {
     { directory, timelinePath },
     candidatePath,
   ), true);
+});
+
+test('malformed semantic diff output fails closed instead of skipping a snapshot', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vedit-runner-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await fs.mkdir(path.join(directory, '.vedit'));
+  const timelinePath = path.join(directory, 'timeline.otio');
+  const candidatePath = path.join(directory, 'timeline.pending.otio');
+  await fs.writeFile(timelinePath, '{}');
+  await fs.writeFile(candidatePath, '{}');
+  const execFile = successfulExecutor({
+    log: 'a1b2c3d  Initial commit  by Editor <editor@example.com>  (HEAD -> main)',
+    'checkout HEAD --output timeline.head.otio': '',
+    'diff timeline.head.otio timeline.pending.otio --json': '{"unexpected":true}',
+  }, []);
+  const runner = createVeditRunner({ binaryPath: '/plugin/bin/vedit', execFile, fsPromises: fs });
+
+  await assert.rejects(
+    runner.hasSemanticChanges({ directory, timelinePath }, candidatePath),
+    /invalid automatic snapshot comparison/,
+  );
+});
+
+test('initialized repository without HEAD is treated as a recoverable first snapshot', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vedit-runner-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await fs.mkdir(path.join(directory, '.vedit'));
+  const timelinePath = path.join(directory, 'timeline.otio');
+  const candidatePath = path.join(directory, 'timeline.pending.otio');
+  await fs.writeFile(timelinePath, '{}');
+  await fs.writeFile(candidatePath, '{}');
+  const calls = [];
+  const execFile = successfulExecutor({ log: '' }, calls);
+  const runner = createVeditRunner({ binaryPath: '/plugin/bin/vedit', execFile, fsPromises: fs });
+
+  assert.equal(await runner.hasSemanticChanges(
+    { directory, timelinePath },
+    candidatePath,
+  ), true);
+  assert.deepEqual(calls.map((call) => call.args), [['log']]);
 });

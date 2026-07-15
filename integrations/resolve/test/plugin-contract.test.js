@@ -56,3 +56,13 @@ test('automatic snapshot option is reduced to one boolean across IPC', () => {
   assert.match(preload, /skipUnchanged:\s*options\.skipUnchanged\s*===\s*true/);
   assert.match(main, /skipUnchanged:\s*options\.skipUnchanged\s*===\s*true/);
 });
+
+test('main process rejects untrusted IPC senders and renderer navigation', () => {
+  const source = fs.readFileSync(path.resolve(__dirname, '..', 'main.js'), 'utf8');
+
+  assert.match(source, /senderFrame/);
+  assert.match(source, /TRUSTED_RENDERER_URL/);
+  assert.match(source, /will-navigate/);
+  assert.match(source, /setWindowOpenHandler/);
+  assert.match(source, /action:\s*'deny'/);
+});

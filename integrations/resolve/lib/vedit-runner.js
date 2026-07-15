@@ -81,30 +81,39 @@ function createVeditRunner({
     }
   }
 
-  async function fileExists(filePath) {
-    try {
-      await fsPromises.access(filePath);
-      return true;
-    } catch (error) {
-      if (error?.code === 'ENOENT') return false;
-      throw error;
-    }
-  }
-
   async function hasSemanticChanges(workspace, candidatePath) {
-    if (!await repositoryExists(workspace.directory)
-      || !await fileExists(workspace.timelinePath)) {
-      return true;
-    }
-    const before = path.relative(workspace.directory, workspace.timelinePath);
-    const after = path.relative(workspace.directory, candidatePath);
-    const output = await run(
-      ['diff', before, after, '--json'],
+    if (!await repositoryExists(workspace.directory)) return true;
+    const history = await run(
+      ['log'],
       workspace.directory,
-      'Vedit could not compare the automatic snapshot.',
+      'Vedit could not inspect automatic snapshot history.',
     );
-    const changes = JSON.parse(output);
-    return Array.isArray(changes) && changes.length > 0;
+    if (!history) return true;
+    const headSnapshotPath = path.join(workspace.directory, 'timeline.head.otio');
+    const before = path.relative(workspace.directory, headSnapshotPath);
+    const after = path.relative(workspace.directory, candidatePath);
+    await fsPromises.rm(headSnapshotPath, { force: true });
+    try {
+      await run(
+        ['checkout', 'HEAD', '--output', before],
+        workspace.directory,
+        'Vedit could not read the latest committed timeline.',
+      );
+      const output = await run(
+        ['diff', before, after, '--json'],
+        workspace.directory,
+        'Vedit could not compare the automatic snapshot.',
+      );
+      const changes = JSON.parse(output);
+      if (!Array.isArray(changes)) {
+        const error = new Error('Vedit returned an invalid automatic snapshot comparison.');
+        error.details = 'Expected the semantic diff to be a JSON array.';
+        throw error;
+      }
+      return changes.length > 0;
+    } finally {
+      await fsPromises.rm(headSnapshotPath, { force: true }).catch(() => {});
+    }
   }
 
   async function load(workspace) {

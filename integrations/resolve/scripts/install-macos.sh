@@ -53,7 +53,10 @@ if ! mv "$STAGING" "$TARGET"; then
   if [[ -e "$BACKUP" ]]; then mv "$BACKUP" "$TARGET"; fi
   exit 1
 fi
+if ! node "$SCRIPT_DIR/validate-install.js" "$TARGET"; then
+  rm -rf "$TARGET"
+  if [[ -e "$BACKUP" ]]; then mv "$BACKUP" "$TARGET"; fi
+  exit 1
+fi
 if [[ -e "$BACKUP" ]]; then rm -rf "$BACKUP"; fi
-
-node "$SCRIPT_DIR/validate-install.js" "$TARGET"
 echo "Restart DaVinci Resolve, then open Workspace -> Workflow Integrations -> Vedit."

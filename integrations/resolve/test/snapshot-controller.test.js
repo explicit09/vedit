@@ -210,6 +210,72 @@ test('automatic snapshot skips promotion and commit when semantics are unchanged
   );
 });
 
+test('manual snapshot queued during an automatic check still creates its commit', async () => {
+  let releaseComparison;
+  let comparisons = 0;
+  const fixture = dependencies({
+    veditRunner: {
+      load: async () => ({ history: [], detail: null }),
+      hasSemanticChanges: async () => {
+        comparisons += 1;
+        return new Promise((resolve) => { releaseComparison = () => resolve(false); });
+      },
+      snapshot: async () => {
+        fixture.events.push('commit');
+        return { history: [{ hash: 'manual', message: 'Manual snapshot' }], detail: null };
+      },
+    },
+  });
+  const controller = createSnapshotController(fixture.values);
+
+  const automatic = controller.snapshot({ skipUnchanged: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  const manual = controller.snapshot({ skipUnchanged: false });
+  releaseComparison();
+  const [automaticState, manualState] = await Promise.all([automatic, manual]);
+
+  assert.equal(automaticState.unchanged, true);
+  assert.equal(manualState.unchanged, undefined);
+  assert.equal(comparisons, 1);
+  assert.equal(fixture.events.filter((event) => event === 'commit').length, 1);
+  assert.equal(fixture.events.filter((event) => event.startsWith('export:')).length, 2);
+});
+
+test('unchanged automatic check loads history for the active workspace', async () => {
+  const secondContext = { ...activeContext, timelineId: 'timeline-99', timelineName: 'Trailer' };
+  let currentContext = activeContext;
+  const fixture = dependencies({
+    resolveAdapter: {
+      getActiveContext: async () => currentContext,
+      exportActiveTimeline: async () => currentContext,
+    },
+    workspaceService: {
+      timelineWorkspace: (_root, context) => ({
+        directory: `/managed/${context.timelineId}`,
+        timelinePath: `/managed/${context.timelineId}/timeline.otio`,
+        pendingPath: `/managed/${context.timelineId}/timeline.otio.pending`,
+      }),
+      promoteExport: async () => {},
+    },
+    veditRunner: {
+      load: async (activeWorkspace) => ({
+        history: [{ hash: activeWorkspace.directory.endsWith('99') ? 'trailer' : 'fine-cut' }],
+        detail: null,
+      }),
+      hasSemanticChanges: async () => false,
+      snapshot: async () => assert.fail('unchanged timeline must not commit'),
+    },
+  });
+  const controller = createSnapshotController(fixture.values);
+  await controller.inspect();
+  currentContext = secondContext;
+
+  const state = await controller.snapshot({ skipUnchanged: true });
+
+  assert.equal(state.context.timelineId, 'timeline-99');
+  assert.deepEqual(state.history, [{ hash: 'trailer' }]);
+});
+
 test('a failed later snapshot preserves the last successful review', async () => {
   const fixture = dependencies();
   const controller = createSnapshotController(fixture.values);

@@ -6,6 +6,8 @@ function createSnapshotController({
   workspaceService,
 }) {
   let inFlight = null;
+  let inFlightSkipsUnchanged = false;
+  let queuedManual = null;
   let lastState = {
     status: 'empty',
     context: null,
@@ -72,12 +74,8 @@ function createSnapshotController({
       if (skipUnchanged
         && !await veditRunner.hasSemanticChanges(workspace, workspace.pendingPath)) {
         await fsPromises.rm(workspace.pendingPath, { force: true });
-        lastState = {
-          ...lastState,
-          status: lastState.history.length === 0 ? 'empty' : 'ready',
-          context,
-          error: null,
-        };
+        const review = await veditRunner.load(workspace);
+        lastState = successState(context, review);
         return { ...lastState, unchanged: true };
       }
       await workspaceService.promoteExport(
@@ -96,13 +94,34 @@ function createSnapshotController({
     }
   }
 
-  function snapshot(options = {}) {
-    if (!inFlight) {
-      inFlight = executeSnapshot({
-        skipUnchanged: options.skipUnchanged === true,
-      }).finally(() => {
+  function beginSnapshot(skipUnchanged) {
+    const operation = executeSnapshot({ skipUnchanged });
+    inFlight = operation;
+    inFlightSkipsUnchanged = skipUnchanged;
+    const clear = () => {
+      if (inFlight === operation) {
         inFlight = null;
-      });
+        inFlightSkipsUnchanged = false;
+      }
+    };
+    operation.then(clear, clear);
+    return operation;
+  }
+
+  function snapshot(options = {}) {
+    const skipUnchanged = options.skipUnchanged === true;
+    if (!inFlight) return beginSnapshot(skipUnchanged);
+    if (!skipUnchanged && inFlightSkipsUnchanged) {
+      if (!queuedManual) {
+        const automatic = inFlight;
+        queuedManual = automatic
+          .then(
+            () => beginSnapshot(false),
+            () => beginSnapshot(false),
+          )
+          .finally(() => { queuedManual = null; });
+      }
+      return queuedManual;
     }
     return inFlight;
   }

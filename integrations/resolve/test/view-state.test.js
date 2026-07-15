@@ -126,6 +126,7 @@ test('renderer wires the opt-in automatic snapshot control safely', () => {
   assert.match(html, /lib\/auto-snapshot\.js/);
   assert.match(renderer, /skipUnchanged:\s*true/);
   assert.match(renderer, /payload\.status === 'error'/);
+  assert.match(renderer, /if \(!autoScheduler\.isEnabled\(\)\) return/);
   assert.match(renderer, /localStorage/);
   assert.match(renderer, /createAutoSnapshotScheduler/);
 });

@@ -84,3 +84,33 @@ test('installer fails clearly when the Resolve SDK bridge is missing', async (t)
     /WorkflowIntegration\.node was not found/,
   );
 });
+
+test('installer restores the prior plugin when validation fails', async (t) => {
+  const temporary = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'vedit-install-'));
+  t.after(() => fsPromises.rm(temporary, { recursive: true, force: true }));
+  const pluginRoot = path.join(temporary, 'plugins');
+  const installed = path.join(pluginRoot, 'com.explicit09.vedit.resolve');
+  const sdkModule = path.join(temporary, 'WorkflowIntegration.node');
+  const invalidSidecar = path.join(temporary, 'invalid-vedit');
+  await fsPromises.mkdir(installed, { recursive: true });
+  await fsPromises.writeFile(path.join(installed, 'known-good.txt'), 'preserve me');
+  await fsPromises.writeFile(sdkModule, 'test-native-module');
+  await fsPromises.writeFile(invalidSidecar, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+
+  const result = spawnSync(installer, [], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      VEDIT_REPO_ROOT: repoRoot,
+      VEDIT_RESOLVE_PLUGIN_ROOT: pluginRoot,
+      VEDIT_RESOLVE_SDK_PLUGIN: sdkModule,
+      VEDIT_SIDECAR_BIN: invalidSidecar,
+      VEDIT_SKIP_ARCH_CHECK: '1',
+    },
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.equal(await fsPromises.readFile(path.join(installed, 'known-good.txt'), 'utf8'), 'preserve me');
+  assert.equal(fs.existsSync(`${installed}.previous`), false);
+});

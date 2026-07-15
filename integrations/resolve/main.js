@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const WorkflowIntegration = require('./WorkflowIntegration.node');
 const { createResolveAdapter } = require('./lib/resolve-adapter');
@@ -9,6 +10,7 @@ const { createVeditRunner } = require('./lib/vedit-runner');
 const workspaceService = require('./lib/workspace');
 
 const PLUGIN_ID = 'com.explicit09.vedit.resolve';
+const TRUSTED_RENDERER_URL = pathToFileURL(path.join(__dirname, 'index.html')).toString();
 
 let initializePromise = null;
 let resolvePromise = null;
@@ -46,11 +48,25 @@ function createController() {
 }
 
 function registerHandlers(controller) {
-  ipcMain.handle('vedit:inspect', () => controller.inspect());
-  ipcMain.handle('vedit:snapshot', (_event, options = {}) => controller.snapshot({
+  function assertTrustedSender(event) {
+    if (!event.senderFrame || event.senderFrame.url !== TRUSTED_RENDERER_URL) {
+      throw new Error('Vedit rejected an IPC request from an untrusted renderer.');
+    }
+  }
+  ipcMain.handle('vedit:inspect', (event) => {
+    assertTrustedSender(event);
+    return controller.inspect();
+  });
+  ipcMain.handle('vedit:snapshot', (event, options = {}) => {
+    assertTrustedSender(event);
+    return controller.snapshot({
     skipUnchanged: options.skipUnchanged === true,
-  }));
-  ipcMain.handle('vedit:cleanup', () => cleanupResolveInterface());
+    });
+  });
+  ipcMain.handle('vedit:cleanup', (event) => {
+    assertTrustedSender(event);
+    return cleanupResolveInterface();
+  });
 }
 
 function createWindow() {
@@ -70,7 +86,10 @@ function createWindow() {
     },
   });
   window.setMenu(null);
-  window.loadFile('index.html');
+  window.webContents.on('will-navigate', (event) => event.preventDefault());
+  window.webContents.on('will-redirect', (event) => event.preventDefault());
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.loadFile(path.join(__dirname, 'index.html'));
   return window;
 }
 

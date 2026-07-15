@@ -52,13 +52,15 @@ if ((fs.statSync(sidecarPath).mode & 0o111) === 0) {
 
 try {
   execFileSync(sidecarPath, ['--version'], { stdio: 'pipe' });
+  execFileSync(sidecarPath, ['checkout', '--help'], { stdio: 'pipe' });
+  execFileSync(sidecarPath, ['diff', '--help'], { stdio: 'pipe' });
 } catch (error) {
-  fail(`bin/vedit could not run: ${error.message}`);
+  fail(`bin/vedit does not provide the required commands: ${error.message}`);
 }
 
 if (process.env.VEDIT_SKIP_ARCH_CHECK !== '1') {
   if (process.arch !== 'arm64') {
-    fail(`V1 requires Apple silicon; Node reported ${process.arch}`);
+    fail(`The current integration requires Apple silicon; Node reported ${process.arch}`);
   }
   for (const relativePath of ['bin/vedit', 'WorkflowIntegration.node']) {
     const output = execFileSync('/usr/bin/file', [

@@ -177,10 +177,11 @@ const autoScheduler = createAutoSnapshotScheduler({
     renderAutoSnapshot('checking');
     try {
       const payload = await runSnapshot({ skipUnchanged: true });
+      if (!autoScheduler.isEnabled()) return;
       if (payload.status === 'error') renderAutoSnapshot('error');
       else renderAutoSnapshot(payload.unchanged ? 'unchanged' : 'saved');
     } catch (_error) {
-      renderAutoSnapshot('error');
+      if (autoScheduler.isEnabled()) renderAutoSnapshot('error');
     }
   },
 });
@@ -197,8 +198,8 @@ function toggleAutoSnapshot() {
 }
 
 async function boot() {
-  setAutoSnapshotEnabled(localStorage.getItem(AUTO_SNAPSHOT_PREFERENCE) === 'true', false);
   await inspect();
+  setAutoSnapshotEnabled(localStorage.getItem(AUTO_SNAPSHOT_PREFERENCE) === 'true', false);
 }
 
 elements.snapshotButton.addEventListener('click', snapshot);
