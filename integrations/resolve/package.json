@@ -1,0 +1,10 @@
+{
+  "name": "@vedit/resolve-integration",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DaVinci Resolve workflow integration for Vedit",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test test"
+  }
+}
