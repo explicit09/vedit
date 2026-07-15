@@ -70,9 +70,12 @@ The agent writes timelines as Python dicts and gets back structured `Change` obj
 The Resolve integration turns the active timeline into a Vedit snapshot without
 opening a terminal, choosing a file, or manually exporting OTIO. Open Vedit from
 Resolve, click **Snapshot timeline**, and review the generated commit and semantic
-changes in the Vedit integration window.
+changes in the Vedit integration window. Or opt into **Auto snapshots**: Vedit
+checks every 30 seconds while its window is open and silently skips unchanged
+timelines instead of filling history with no-op commits.
 
-V1 targets DaVinci Resolve Studio 20.1+ on Apple silicon Macs. Install it from a
+The current integration targets DaVinci Resolve Studio 20.1+ on Apple silicon
+Macs. Install it from a
 source checkout with:
 
 ```

@@ -10,7 +10,7 @@ or keep a terminal open.
 - An Apple silicon Mac for V1.
 - A local checkout of this repository.
 
-Resolve's Workflow Integration API is a Studio feature. The current V1 package
+Resolve's Workflow Integration API is a Studio feature. The current package
 is macOS arm64; the source is structured for a later Windows package.
 
 ## Install
@@ -50,6 +50,18 @@ history. OTIO is an internal transport format here, not a user workflow.
 The first snapshot describes the number of tracks and clips. Later snapshots
 describe semantic changes such as trims, moves, replacements, transitions, and
 effects.
+
+## Automatic snapshots
+
+Turn on **Auto snapshots** in the Vedit window to check the active timeline
+every 30 seconds. The setting is opt-in and stays saved for the next time the
+integration opens. Checks run only while the Vedit window is open.
+
+Automatic checks compare the pending Resolve export with the latest timeline
+semantically. If no edit decisions changed, Vedit discards the pending export
+and creates no commit. If something changed, it uses the same serialized save
+and review path as the Snapshot button. Manual snapshots remain intentional and
+always create a snapshot when clicked.
 
 ## Where history lives
 
