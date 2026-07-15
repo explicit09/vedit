@@ -184,6 +184,32 @@ test('snapshot aborts if the active timeline changes during export', async () =>
   assert.equal(fixture.events.some((event) => event.startsWith('promote:')), false);
 });
 
+test('automatic snapshot skips promotion and commit when semantics are unchanged', async () => {
+  const fixture = dependencies({
+    veditRunner: {
+      load: async () => ({ history: [], detail: null }),
+      snapshot: async () => assert.fail('unchanged timeline must not commit'),
+      hasSemanticChanges: async (_workspace, candidatePath) => {
+        fixture.events.push(`compare:${candidatePath}`);
+        return false;
+      },
+    },
+  });
+  const controller = createSnapshotController(fixture.values);
+
+  const state = await controller.snapshot({ skipUnchanged: true });
+
+  assert.equal(state.status, 'empty');
+  assert.equal(state.unchanged, true);
+  assert.equal(state.context.timelineId, 'timeline-42');
+  assert.equal(fixture.events.includes('commit'), false);
+  assert.equal(fixture.events.some((event) => event.startsWith('promote:')), false);
+  assert.equal(
+    fixture.events.includes(`compare:${workspace.pendingPath}`),
+    true,
+  );
+});
+
 test('a failed later snapshot preserves the last successful review', async () => {
   const fixture = dependencies();
   const controller = createSnapshotController(fixture.values);

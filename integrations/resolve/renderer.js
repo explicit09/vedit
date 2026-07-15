@@ -1,4 +1,7 @@
 const { createInitialView, reduceView } = window.VeditViewState;
+const { createAutoSnapshotScheduler } = window.VeditAutoSnapshot;
+
+const AUTO_SNAPSHOT_PREFERENCE = 'vedit.autoSnapshots.enabled';
 
 const elements = {
   body: document.body,
@@ -8,6 +11,8 @@ const elements = {
   projectName: document.getElementById('project-name'),
   snapshotButton: document.getElementById('snapshot-button'),
   snapshotLabel: document.getElementById('snapshot-label'),
+  autoSnapshotToggle: document.getElementById('auto-snapshot-toggle'),
+  autoSnapshotStatus: document.getElementById('auto-snapshot-status'),
   errorBanner: document.getElementById('error-banner'),
   errorMessage: document.getElementById('error-message'),
   errorDetailsWrap: document.getElementById('error-details-wrap'),
@@ -25,6 +30,7 @@ const elements = {
 };
 
 let view = createInitialView();
+let autoSnapshotNote = '';
 
 function text(element, value) {
   element.textContent = value ?? '';
@@ -115,6 +121,21 @@ function render() {
   renderHistory(view.history);
 }
 
+function renderAutoSnapshot(status) {
+  const enabled = status !== 'disabled';
+  elements.autoSnapshotToggle.setAttribute('aria-pressed', String(enabled));
+  const copy = {
+    disabled: 'Off · checks every 30s',
+    enabled: 'On · next check within 30s',
+    checking: 'Checking active timeline…',
+    unchanged: 'On · timeline is up to date',
+    saved: 'On · snapshot saved',
+    error: 'On · last check needs attention',
+  }[status];
+  text(elements.autoSnapshotStatus, autoSnapshotNote || copy || 'Off · checks every 30s');
+  autoSnapshotNote = '';
+}
+
 async function inspect() {
   view = reduceView(view, { type: 'inspect-started' });
   render();
@@ -127,19 +148,64 @@ async function inspect() {
   render();
 }
 
-async function snapshot() {
+async function runSnapshot(options = {}) {
   view = reduceView(view, { type: 'snapshot-started' });
   render();
   try {
-    const payload = await window.vedit.snapshot();
+    const payload = await window.vedit.snapshot(options);
     view = reduceView(view, { type: 'operation-finished', payload });
+    return payload;
   } catch (error) {
     view = reduceView(view, { type: 'operation-rejected', error });
+    throw error;
+  } finally {
+    render();
   }
-  render();
+}
+
+async function snapshot() {
+  try {
+    await runSnapshot({ skipUnchanged: false });
+  } catch (_error) {
+    // The shared view renders the retryable error from runSnapshot.
+  }
+}
+
+const autoScheduler = createAutoSnapshotScheduler({
+  onStatus: renderAutoSnapshot,
+  async onTick() {
+    renderAutoSnapshot('checking');
+    try {
+      const payload = await runSnapshot({ skipUnchanged: true });
+      if (payload.status === 'error') renderAutoSnapshot('error');
+      else renderAutoSnapshot(payload.unchanged ? 'unchanged' : 'saved');
+    } catch (_error) {
+      renderAutoSnapshot('error');
+    }
+  },
+});
+
+function setAutoSnapshotEnabled(enabled, persist = true) {
+  if (enabled) autoScheduler.start();
+  else autoScheduler.stop();
+  renderAutoSnapshot(enabled ? 'enabled' : 'disabled');
+  if (persist) localStorage.setItem(AUTO_SNAPSHOT_PREFERENCE, String(enabled));
+}
+
+function toggleAutoSnapshot() {
+  setAutoSnapshotEnabled(!autoScheduler.isEnabled());
+}
+
+async function boot() {
+  setAutoSnapshotEnabled(localStorage.getItem(AUTO_SNAPSHOT_PREFERENCE) === 'true', false);
+  await inspect();
 }
 
 elements.snapshotButton.addEventListener('click', snapshot);
+elements.autoSnapshotToggle.addEventListener('click', toggleAutoSnapshot);
 elements.retryButton.addEventListener('click', inspect);
-window.addEventListener('beforeunload', () => window.vedit.cleanup());
-window.addEventListener('DOMContentLoaded', inspect);
+window.addEventListener('beforeunload', () => {
+  autoScheduler.stop();
+  window.vedit.cleanup();
+});
+window.addEventListener('DOMContentLoaded', boot);

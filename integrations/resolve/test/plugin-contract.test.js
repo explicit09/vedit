@@ -48,3 +48,11 @@ test('workspace root uses Electron’s supported videos path', () => {
   assert.match(main, /app\.getPath\('videos'\)/);
   assert.doesNotMatch(main, /app\.getPath\('movies'\)/);
 });
+
+test('automatic snapshot option is reduced to one boolean across IPC', () => {
+  const main = read('main.js');
+  const preload = read('preload.js');
+
+  assert.match(preload, /skipUnchanged:\s*options\.skipUnchanged\s*===\s*true/);
+  assert.match(main, /skipUnchanged:\s*options\.skipUnchanged\s*===\s*true/);
+});

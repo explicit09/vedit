@@ -40,7 +40,7 @@ mkdir -p "$STAGING/bin" "$STAGING/lib"
 for file in manifest.xml package.json main.js preload.js index.html styles.css renderer.js; do
   cp "$INTEGRATION_ROOT/$file" "$STAGING/$file"
 done
-for file in workspace.js resolve-adapter.js vedit-runner.js snapshot-controller.js view-state.js; do
+for file in workspace.js resolve-adapter.js vedit-runner.js snapshot-controller.js auto-snapshot.js view-state.js; do
   cp "$INTEGRATION_ROOT/lib/$file" "$STAGING/lib/$file"
 done
 cp "$SDK_PLUGIN" "$STAGING/WorkflowIntegration.node"

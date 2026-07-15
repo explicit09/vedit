@@ -29,6 +29,7 @@ const requiredFiles = [
   'lib/resolve-adapter.js',
   'lib/vedit-runner.js',
   'lib/snapshot-controller.js',
+  'lib/auto-snapshot.js',
   'lib/view-state.js',
 ];
 

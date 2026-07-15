@@ -110,3 +110,22 @@ test('renderer treats runtime strings as text instead of HTML', () => {
   assert.doesNotMatch(renderer, /\.innerHTML\s*=/);
   assert.doesNotMatch(renderer, /insertAdjacentHTML/);
 });
+
+test('renderer wires the opt-in automatic snapshot control safely', () => {
+  const renderer = fs.readFileSync(
+    path.resolve(__dirname, '..', 'renderer.js'),
+    'utf8',
+  );
+  const html = fs.readFileSync(
+    path.resolve(__dirname, '..', 'index.html'),
+    'utf8',
+  );
+
+  assert.match(html, /id="auto-snapshot-toggle"/);
+  assert.match(html, /aria-pressed="false"/);
+  assert.match(html, /lib\/auto-snapshot\.js/);
+  assert.match(renderer, /skipUnchanged:\s*true/);
+  assert.match(renderer, /payload\.status === 'error'/);
+  assert.match(renderer, /localStorage/);
+  assert.match(renderer, /createAutoSnapshotScheduler/);
+});

@@ -47,7 +47,9 @@ function createController() {
 
 function registerHandlers(controller) {
   ipcMain.handle('vedit:inspect', () => controller.inspect());
-  ipcMain.handle('vedit:snapshot', () => controller.snapshot());
+  ipcMain.handle('vedit:snapshot', (_event, options = {}) => controller.snapshot({
+    skipUnchanged: options.skipUnchanged === true,
+  }));
   ipcMain.handle('vedit:cleanup', () => cleanupResolveInterface());
 }
 

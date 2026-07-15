@@ -50,6 +50,7 @@ test('installer creates a minimal validated Resolve plugin', async (t) => {
     'lib/resolve-adapter.js',
     'lib/vedit-runner.js',
     'lib/snapshot-controller.js',
+    'lib/auto-snapshot.js',
     'lib/view-state.js',
   ]) {
     assert.equal(fs.existsSync(path.join(installed, file)), true, `${file} missing`);

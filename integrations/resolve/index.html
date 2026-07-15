@@ -36,6 +36,17 @@
       </button>
     </section>
 
+    <section class="automation-strip" aria-label="Snapshot automation">
+      <button class="auto-toggle" id="auto-snapshot-toggle" type="button" aria-pressed="false">
+        <span class="auto-switch" aria-hidden="true"><i></i></span>
+        <span class="auto-copy">
+          <strong>Auto snapshots</strong>
+          <small id="auto-snapshot-status">Off · checks every 30s</small>
+        </span>
+      </button>
+      <p>Checks only while this Vedit window is open. Unchanged timelines are skipped.</p>
+    </section>
+
     <aside class="error-banner is-hidden" id="error-banner" role="alert">
       <div>
         <p class="error-kicker">Snapshot interrupted</p>
@@ -80,6 +91,7 @@
       <ol class="history-list" id="history-list"></ol>
     </section>
   </main>
+  <script src="lib/auto-snapshot.js"></script>
   <script src="lib/view-state.js"></script>
   <script src="renderer.js"></script>
 </body>

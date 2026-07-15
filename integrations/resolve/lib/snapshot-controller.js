@@ -51,7 +51,7 @@ function createSnapshotController({
     }
   }
 
-  async function executeSnapshot() {
+  async function executeSnapshot({ skipUnchanged = false } = {}) {
     let context = null;
     let workspace = null;
     try {
@@ -69,6 +69,17 @@ function createSnapshotController({
         error.code = 'ACTIVE_TIMELINE_CHANGED';
         throw error;
       }
+      if (skipUnchanged
+        && !await veditRunner.hasSemanticChanges(workspace, workspace.pendingPath)) {
+        await fsPromises.rm(workspace.pendingPath, { force: true });
+        lastState = {
+          ...lastState,
+          status: lastState.history.length === 0 ? 'empty' : 'ready',
+          context,
+          error: null,
+        };
+        return { ...lastState, unchanged: true };
+      }
       await workspaceService.promoteExport(
         fsPromises,
         workspace.pendingPath,
@@ -85,9 +96,11 @@ function createSnapshotController({
     }
   }
 
-  function snapshot() {
+  function snapshot(options = {}) {
     if (!inFlight) {
-      inFlight = executeSnapshot().finally(() => {
+      inFlight = executeSnapshot({
+        skipUnchanged: options.skipUnchanged === true,
+      }).finally(() => {
         inFlight = null;
       });
     }

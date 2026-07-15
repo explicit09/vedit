@@ -140,3 +140,62 @@ test('command failures retain diagnostic stderr without changing the message', a
     },
   );
 });
+
+test('semantic comparison skips an unchanged pending export', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vedit-runner-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await fs.mkdir(path.join(directory, '.vedit'));
+  const timelinePath = path.join(directory, 'timeline.otio');
+  const candidatePath = path.join(directory, 'timeline.pending.otio');
+  await fs.writeFile(timelinePath, '{}');
+  await fs.writeFile(candidatePath, '{}');
+  const calls = [];
+  const execFile = successfulExecutor({
+    'diff timeline.otio timeline.pending.otio --json': '[]',
+  }, calls);
+  const runner = createVeditRunner({ binaryPath: '/plugin/bin/vedit', execFile, fsPromises: fs });
+
+  const changed = await runner.hasSemanticChanges(
+    { directory, timelinePath },
+    candidatePath,
+  );
+
+  assert.equal(changed, false);
+  assert.deepEqual(calls.map((call) => call.args), [
+    ['diff', 'timeline.otio', 'timeline.pending.otio', '--json'],
+  ]);
+});
+
+test('semantic comparison detects changed pending export', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vedit-runner-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await fs.mkdir(path.join(directory, '.vedit'));
+  const timelinePath = path.join(directory, 'timeline.otio');
+  const candidatePath = path.join(directory, 'timeline.pending.otio');
+  await fs.writeFile(timelinePath, '{}');
+  await fs.writeFile(candidatePath, '{}');
+  const execFile = successfulExecutor({
+    'diff timeline.otio timeline.pending.otio --json': '[{"op":"trimmed"}]',
+  }, []);
+  const runner = createVeditRunner({ binaryPath: '/plugin/bin/vedit', execFile, fsPromises: fs });
+
+  assert.equal(await runner.hasSemanticChanges(
+    { directory, timelinePath },
+    candidatePath,
+  ), true);
+});
+
+test('first pending export is always treated as changed', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'vedit-runner-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const timelinePath = path.join(directory, 'timeline.otio');
+  const candidatePath = path.join(directory, 'timeline.pending.otio');
+  await fs.writeFile(candidatePath, '{}');
+  const execFile = () => assert.fail('diff must not run before the first snapshot');
+  const runner = createVeditRunner({ binaryPath: '/plugin/bin/vedit', execFile, fsPromises: fs });
+
+  assert.equal(await runner.hasSemanticChanges(
+    { directory, timelinePath },
+    candidatePath,
+  ), true);
+});

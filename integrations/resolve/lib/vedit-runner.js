@@ -81,6 +81,32 @@ function createVeditRunner({
     }
   }
 
+  async function fileExists(filePath) {
+    try {
+      await fsPromises.access(filePath);
+      return true;
+    } catch (error) {
+      if (error?.code === 'ENOENT') return false;
+      throw error;
+    }
+  }
+
+  async function hasSemanticChanges(workspace, candidatePath) {
+    if (!await repositoryExists(workspace.directory)
+      || !await fileExists(workspace.timelinePath)) {
+      return true;
+    }
+    const before = path.relative(workspace.directory, workspace.timelinePath);
+    const after = path.relative(workspace.directory, candidatePath);
+    const output = await run(
+      ['diff', before, after, '--json'],
+      workspace.directory,
+      'Vedit could not compare the automatic snapshot.',
+    );
+    const changes = JSON.parse(output);
+    return Array.isArray(changes) && changes.length > 0;
+  }
+
   async function load(workspace) {
     if (!await repositoryExists(workspace.directory)) {
       return { history: [], detail: null };
@@ -117,7 +143,7 @@ function createVeditRunner({
     return { commitLine, ...await load(workspace) };
   }
 
-  return { load, snapshot };
+  return { hasSemanticChanges, load, snapshot };
 }
 
 module.exports = {
