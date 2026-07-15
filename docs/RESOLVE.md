@@ -1,151 +1,133 @@
-# Using vedit with DaVinci Resolve
+# Using Vedit inside DaVinci Resolve
 
-Set this up once and vedit will save a snapshot of your timeline every time you export from Resolve. You'll get a clean version history — what was in each cut, what changed, when — without ever leaving your editor.
+The Vedit Workflow Integration snapshots the active Resolve timeline and shows
+its version history without asking you to import or export OTIO, choose a file,
+or keep a terminal open.
 
-## What you'll have at the end
+## Requirements
 
-A terminal window quietly running `vedit watch`. Whenever you click "export" in Resolve (or hit a hotkey for it), vedit notices and saves a new version automatically:
+- DaVinci Resolve **Studio 20.1 or newer**.
+- An Apple silicon Mac for V1.
+- A local checkout of this repository.
 
-```
-[main 4758e4a] Initial cut: 1 track, 4 clips
-[main f2d8815] Trimmed "drone_shot_04" by 1.80s
-[main a0c1d22] Moved interview clip, added crossfade
-```
+Resolve's Workflow Integration API is a Studio feature. The current V1 package
+is macOS arm64; the source is structured for a later Windows package.
 
-You don't have to type anything. The commit messages write themselves from what changed.
+## Install
 
-## Step 1 — make sure Resolve scripting works
+From the repository root:
 
-Open Resolve. Go to **Workspace → Console**. The console pane appears at the bottom. Switch its dropdown to **Lua**. Type:
-
-```lua
-project = resolve:GetProjectManager():GetCurrentProject()
-print(project:GetName())
+```bash
+./integrations/resolve/scripts/install-macos.sh
 ```
 
-You should see your project name. If you do, you're good. If you get an error, scripting may not be enabled — check **Resolve → Preferences → System → General** and make sure scripting is allowed.
+The installer:
 
-(If your Resolve has Python configured instead of Lua, both work the same way — see the Python script at the bottom of this page.)
+1. Builds the release `vedit` sidecar.
+2. Copies the integration to Resolve's Workflow Integration Plugins directory.
+3. Copies Blackmagic's compatible `WorkflowIntegration.node` from the Resolve
+   developer kit already installed on your Mac.
+4. Validates the plugin identity, production files, executables, and arm64
+   architecture.
 
-## Step 2 — install the export script
+The Blackmagic native module is never stored in this repository or distributed
+as part of Vedit.
 
-Save this as a `.lua` file in Resolve's scripts folder:
+Restart Resolve after installation. Resolve discovers Workflow Integrations only
+during launch.
 
-- **macOS:** `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Edit/vedit_export.lua`
-- **Windows:** `%APPDATA%\Blackmagic Design\DaVinci Resolve\Fusion\Scripts\Edit\vedit_export.lua`
+## Take a snapshot
 
-```lua
--- Export the current Resolve timeline to a fixed path.
--- vedit watch is configured to look at this path,
--- so running this script triggers an automatic snapshot.
+1. Open a Resolve project and make its timeline active.
+2. Choose **Workspace → Workflow Integrations → Vedit**.
+3. Confirm that Vedit shows the correct project and timeline.
+4. Click **Snapshot timeline**.
 
-local EXPORT_PATH = os.getenv("HOME") .. "/projects/my_cut/timeline.otio"
+Resolve exports the active timeline to Vedit's managed workspace in the
+background. Vedit commits it and immediately shows the latest change and recent
+history. OTIO is an internal transport format here, not a user workflow.
 
-local resolve = Resolve()
-local project = resolve:GetProjectManager():GetCurrentProject()
-local timeline = project:GetCurrentTimeline()
+The first snapshot describes the number of tracks and clips. Later snapshots
+describe semantic changes such as trims, moves, replacements, transitions, and
+effects.
 
-if not timeline then
-    print("vedit_export: no timeline open")
-else
-    local ok = timeline:Export(EXPORT_PATH, resolve.EXPORT_OTIO)
-    print(ok and ("vedit_export: saved to " .. EXPORT_PATH) or "vedit_export: export failed")
-end
+## Where history lives
+
+Each Resolve timeline gets a local repository under:
+
+```text
+~/Movies/Vedit/<project>/<timeline>/
 ```
 
-Change `EXPORT_PATH` to match where your project lives.
+The project folder is readable, while the timeline folder uses a short identity
+key so its history remains stable when the timeline is renamed. Media is not
+copied. Each repository stores only structured timeline snapshots and Vedit
+history.
 
-Restart Resolve, or refresh its Scripts menu (**Workspace → Scripts → Edit**). The script will appear there.
+You can inspect one from Terminal if needed, but normal editor use does not
+require it:
 
-## Step 3 — bind it to a hotkey (optional)
-
-Resolve doesn't bind menu items to hotkeys natively. The script will appear under **Workspace → Scripts → Edit → vedit_export** and you can run it with one click. If you want a real hotkey:
-
-- **macOS:** Karabiner-Elements or Keyboard Maestro
-- **Windows:** PowerToys or AutoHotkey
-
-## Step 4 — start vedit
-
-In a terminal, in your project folder:
-
-```
-vedit init                 # only the first time
-vedit watch timeline.otio
+```bash
+cd ~/Movies/Vedit/<project>/<timeline>
+vedit log
+vedit show HEAD
 ```
 
-Leave that terminal running while you edit. Now whenever you run the export script in Resolve (from the menu or your hotkey), vedit will save a new version automatically.
+## What a snapshot includes
 
-## Working with versions
+Vedit stores the edit information present in Resolve's OTIO export: timeline
+structure, clips, source ranges, transitions, supported effects, audio levels,
+and Resolve metadata that survives OTIO.
 
-While `vedit watch` is running, use these commands in another terminal whenever you want to look at history:
-
-```
-vedit log              # see all your saved versions
-vedit show HEAD        # what changed in the most recent version
-vedit show <version>   # what changed in a specific version
-vedit branches         # list your branches
-```
-
-To try out an alternate cut without losing your main version:
-
-```
-vedit branch alt_cut         # save a bookmark of where you are
-vedit checkout alt_cut       # switch to it
-# ...edit and export from Resolve as normal — it commits to alt_cut...
-vedit checkout main          # come back to the main cut
-```
-
-To bring an alternate cut back into main:
-
-```
-vedit merge alt_cut
-```
-
-If both branches changed the same track, vedit will tell you and refuse to merge. Pick one branch to keep, manually re-create the changes you want from the other side, and re-merge.
-
-## What gets saved and what doesn't
-
-vedit saves the parts of your edit that live in the OTIO export — clips, cuts, transitions, source ranges, audio levels, effects, the structure of your timeline. That's enough to re-create the timeline exactly as you exported it.
-
-vedit does **not** save things that Resolve keeps inside the project file rather than the OTIO export — color grades, render-cache hints, Fusion compositions in some cases. Treat vedit as a snapshot of your timeline, not a replacement for your `.drp` project file. Keep both.
+Resolve-internal information that is absent from OTIO is not versioned. This can
+include color grades, render-cache state, and some Fusion compositions. Keep
+normal Resolve project backups; Vedit is timeline history, not a replacement for
+the project database or `.drp` archives.
 
 ## Troubleshooting
 
-**Scripts menu doesn't show vedit_export.** Check the path is exactly right (capitalization matters), then restart Resolve. The Scripts menu only refreshes on launch.
+**Vedit is missing from Workflow Integrations.** Confirm you are using Resolve
+Studio 20.1+, run the installer again, and fully restart Resolve. Validate the
+installed files with:
 
-**vedit watch says nothing when I export.** Make sure the export path in `vedit_export.lua` matches the path you passed to `vedit watch`. They have to point at the same file.
+```bash
+node integrations/resolve/scripts/validate-install.js
+```
 
-**vedit watch commits a half-written file.** Shouldn't happen — vedit waits for the file to finish writing before committing. If it does, file an issue with the input.
+**The installer cannot find `WorkflowIntegration.node`.** The installed Resolve
+developer kit is missing or older than 20.1. Reinstall or update Resolve Studio,
+then rerun the Vedit installer. The script intentionally does not download or
+redistribute Blackmagic's native module.
 
-**The recovered version doesn't have my color grade.** Color grades live in Resolve's project file, not the OTIO export. They aren't saved by vedit. Keep your `.drp` file in normal backup.
+**Vedit says to open a project or timeline.** The integration only snapshots the
+currently active timeline. Open the project, select a timeline in the Edit or Cut
+page, then click **Reconnect**.
+
+**Snapshot failed.** Expand **Technical details** in the Vedit error banner. A
+failed export is never committed, and the previous successful history remains
+visible.
+
+**A snapshot does not contain a color grade.** Color grades are stored by Resolve
+outside the OTIO timeline representation. Continue backing up the Resolve project
+alongside Vedit history.
+
+## Advanced fallback: export watcher
+
+The earlier script-and-watcher workflow remains available for unsupported hosts
+and custom automation. Export an OTIO file to a stable path using a Resolve Lua
+or Python script, then run:
+
+```bash
+vedit init
+vedit watch timeline.otio
+```
+
+That fallback exposes the OTIO file and requires a terminal. Resolve Studio users
+should use the Workflow Integration above.
 
 ## Other editors
 
-The same pattern works for any editor that exports OTIO:
-
-- **Premiere** — ExtendScript can export OTIO via community adapters. Bind the script to a panel button.
-- **Final Cut Pro** — Apple's XML export goes through `otio-fcpx-xml-adapter`. Less ergonomic, workable.
-
-Anywhere you can write a small script that exports OTIO to a known path, `vedit watch` will pick it up.
-
-## Python alternative (if your Resolve has Python configured)
-
-If Lua isn't your thing and Resolve's Python console works on your machine, save this as `vedit_export.py` in the same folder:
-
-```python
-"""Export the current Resolve timeline as OTIO."""
-import os
-
-EXPORT_PATH = os.path.expanduser("~/projects/my_cut/timeline.otio")
-
-resolve = app.GetResolve()  # provided by Resolve at runtime
-project = resolve.GetProjectManager().GetCurrentProject()
-timeline = project.GetCurrentTimeline()
-if timeline is None:
-    print("vedit_export: no timeline open")
-else:
-    ok = timeline.Export(EXPORT_PATH, resolve.EXPORT_OTIO)
-    print(f"vedit_export: saved to {EXPORT_PATH}" if ok else "vedit_export: export failed")
-```
-
-The Lua and Python versions are interchangeable. Use whichever your Resolve install supports.
+The Resolve plugin is a thin adapter over the editor-agnostic Vedit engine. A
+future Premiere integration can provide the same Snapshot and History interface
+while translating through Premiere's own host API. The Vedit repository, diff,
+branch, and merge logic stays shared.

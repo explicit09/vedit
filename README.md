@@ -65,18 +65,22 @@ for change in repo.diff_refs("main", "alt"):
 
 The agent writes timelines as Python dicts and gets back structured `Change` objects — no temp files, no shelling out.
 
-## Auto-commit while you edit
+## Use it inside DaVinci Resolve
 
-If you're in DaVinci Resolve, you can wire vedit to commit automatically every time you export your timeline. Configure once, then forget about it — every export becomes a version.
+The Resolve integration turns the active timeline into a Vedit snapshot without
+opening a terminal, choosing a file, or manually exporting OTIO. Open Vedit from
+Resolve, click **Snapshot timeline**, and review the generated commit and semantic
+changes in the Vedit integration window.
+
+V1 targets DaVinci Resolve Studio 20.1+ on Apple silicon Macs. Install it from a
+source checkout with:
 
 ```
-$ vedit watch timeline.otio
-Watching timeline.otio
-[main 4758e4a] Initial commit: 1 track(s), 4 clip(s)
-[main f2d8815] Trimmed "drone_shot_04" by 1.80s (in)
+./integrations/resolve/scripts/install-macos.sh
 ```
 
-The commit messages write themselves from the diff. Setup takes about five minutes — see [docs/RESOLVE.md](docs/RESOLVE.md).
+Restart Resolve, then open **Workspace → Workflow Integrations → Vedit**. See
+[docs/RESOLVE.md](docs/RESOLVE.md) for compatibility, storage, and troubleshooting.
 
 ## More
 

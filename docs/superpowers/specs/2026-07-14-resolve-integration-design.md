@@ -86,15 +86,17 @@ direct Node, filesystem, child-process, or Resolve access.
 Each timeline maps to:
 
 ```text
-~/Movies/Vedit/<project-slug>--<project-key>/<timeline-slug>--<timeline-id>/
+~/Movies/Vedit/<project-slug>--<project-key>/timeline--<timeline-key>/
   timeline.otio
   .vedit/
 ```
 
 Resolve does not expose a stable project ID, so `project-key` is a short hash of
 the Resolve project-library identity when available plus the project name.
-`timeline-id` comes from `Timeline.GetUniqueId()`. Names are slugs for human
-inspection; IDs prevent collisions when timelines are renamed.
+`timeline-key` is derived from `Timeline.GetUniqueId()`. The timeline directory
+does not include its mutable name, so renaming an active timeline cannot split
+its history. The project directory remains readable and carries a database-aware
+identity key.
 
 The plugin writes exports to a temporary sibling and atomically replaces
 `timeline.otio` only after Resolve reports a successful export. Vedit's existing
