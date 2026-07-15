@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vedit for Resolve — V1 Design</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b0d10; --card:#151920; --line:#2a3039; --ink:#f5f7fa; --muted:#9ba6b5; --blue:#5b8cff; --green:#65d39a; }
+    * { box-sizing:border-box } body { margin:0; font:14px/1.45 ui-sans-serif,system-ui,-apple-system; background:radial-gradient(circle at 85% 0,#182541 0,transparent 34%),var(--bg); color:var(--ink) }
+    main { max-width:1050px; margin:auto; padding:32px }
+    header { display:flex; justify-content:space-between; gap:24px; align-items:end; margin-bottom:22px }
+    h1 { font-size:34px; line-height:1; margin:0 0 9px; letter-spacing:-1.2px } h2 { font-size:15px; margin:0 0 12px } p { margin:0; color:var(--muted) }
+    .pill { border:1px solid #31583f; color:var(--green); background:#12251a; padding:7px 10px; border-radius:999px; white-space:nowrap }
+    .grid { display:grid; grid-template-columns:1.15fr .85fr; gap:16px }
+    .card { background:color-mix(in srgb,var(--card) 92%,transparent); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:0 12px 35px #0005 }
+    .flow { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; align-items:center }
+    .step { min-height:92px; padding:12px; border-radius:12px; background:#10141a; border:1px solid #252c35 }
+    .step b { display:block; color:var(--blue); font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:7px }
+    .step span { color:#d7dde7 }
+    ul { margin:0; padding-left:18px; color:#d7dde7 } li+li { margin-top:7px }
+    .phase { display:flex; gap:10px; padding:11px 0; border-top:1px solid var(--line) }.phase:first-of-type { border-top:0; padding-top:0 }.num { width:28px; height:28px; display:grid; place-items:center; border-radius:8px; background:#223258; color:#a9c1ff; font-weight:700; flex:none }
+    .phase strong { display:block; margin-bottom:2px }.phase small { color:var(--muted) }
+    .wide { grid-column:1/-1 }
+    .proof { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; counter-reset:proof }
+    .proof div { background:#10141a; padding:11px; border-radius:10px; border:1px solid #252c35; color:#cbd3df; font-size:12px }
+    .proof div:before { counter-increment:proof; content:counter(proof); display:block; color:var(--green); font-weight:800; margin-bottom:5px }
+    @media(max-width:760px){ main{padding:20px}.grid{grid-template-columns:1fr}.flow,.proof{grid-template-columns:1fr 1fr}.wide{grid-column:auto}header{align-items:start;flex-direction:column} }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>Vedit inside Resolve</h1><p>No Terminal. No file picker. OTIO stays behind the curtain.</p></div>
+    <div class="pill">Target: Resolve Studio 20.1+</div>
+  </header>
+  <section class="grid">
+    <article class="card wide">
+      <h2>The V1 loop</h2>
+      <div class="flow">
+        <div class="step"><b>1 · Open</b><span>Workspace → Workflow Integrations → Vedit</span></div>
+        <div class="step"><b>2 · Snapshot</b><span>Resolve exports the active timeline silently</span></div>
+        <div class="step"><b>3 · Commit</b><span>Existing Vedit engine versions the edit locally</span></div>
+        <div class="step"><b>4 · Review</b><span>History and semantic changes appear immediately</span></div>
+      </div>
+    </article>
+    <article class="card">
+      <h2>Thin adapter architecture</h2>
+      <ul>
+        <li>Resolve promise API handles project, timeline, and export.</li>
+        <li>Sandboxed renderer talks through a narrow preload bridge.</li>
+        <li>Bundled CLI sidecar owns commits, diffs, and history.</li>
+        <li>Blackmagic's native module is copied from the installed SDK.</li>
+      </ul>
+    </article>
+    <article class="card">
+      <h2>Release sequence</h2>
+      <div class="phase"><div class="num">V1</div><div><strong>Snapshot + review</strong><small>One click, real history, useful diff.</small></div></div>
+      <div class="phase"><div class="num">V2</div><div><strong>Automatic snapshots</strong><small>Opt-in polling, semantic no-op suppression.</small></div></div>
+      <div class="phase"><div class="num">→</div><div><strong>Later</strong><small>Restore, branches, merge UI, Premiere.</small></div></div>
+    </article>
+    <article class="card wide">
+      <h2>Runtime proof gate</h2>
+      <div class="proof"><div>Vedit appears in Resolve.</div><div>Real project and timeline detected.</div><div>Snapshot creates a real commit.</div><div>Diff renders inside the window.</div><div>Second edit produces a correct second diff.</div></div>
+    </article>
+  </section>
+</main>
+</body>
+</html>
