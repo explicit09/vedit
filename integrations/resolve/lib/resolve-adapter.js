@@ -14,10 +14,8 @@ function createResolveAdapter({ getResolve, exportType }) {
     if (!projectManager) {
       throw typedError('RESOLVE_UNAVAILABLE', 'Vedit lost its connection to Resolve.');
     }
-    const [database, project] = await Promise.all([
-      projectManager.GetCurrentDatabase(),
-      projectManager.GetCurrentProject(),
-    ]);
+    const database = await projectManager.GetCurrentDatabase();
+    const project = await projectManager.GetCurrentProject();
     if (!project) {
       throw typedError('NO_PROJECT', 'Open a Resolve project to use Vedit.');
     }
@@ -25,11 +23,9 @@ function createResolveAdapter({ getResolve, exportType }) {
     if (!timeline) {
       throw typedError('NO_TIMELINE', 'Open a timeline in Resolve to use Vedit.');
     }
-    const [projectName, timelineName, timelineId] = await Promise.all([
-      project.GetName(),
-      timeline.GetName(),
-      timeline.GetUniqueId(),
-    ]);
+    const projectName = await project.GetName();
+    const timelineName = await timeline.GetName();
+    const timelineId = await timeline.GetUniqueId();
     if (!timelineId) {
       throw typedError(
         'TIMELINE_ID_UNAVAILABLE',

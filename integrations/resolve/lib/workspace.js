@@ -36,7 +36,7 @@ function timelineWorkspace(root, context) {
   return {
     directory,
     timelinePath,
-    pendingPath: `${timelinePath}.pending`,
+    pendingPath: path.join(directory, 'timeline.pending.otio'),
   };
 }
 

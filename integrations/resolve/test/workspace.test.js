@@ -41,7 +41,7 @@ test('timelineWorkspace keeps the same directory across timeline renames', () =>
 
   assert.equal(original.directory, renamed.directory);
   assert.equal(original.timelinePath, path.join(original.directory, 'timeline.otio'));
-  assert.equal(original.pendingPath, `${original.timelinePath}.pending`);
+  assert.equal(original.pendingPath, path.join(original.directory, 'timeline.pending.otio'));
 });
 
 test('promoteExport atomically replaces the current timeline', async (t) => {
