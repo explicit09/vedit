@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Vedit Resolve V1 — Implementation Map</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0c0f13;--card:#161b22;--line:#2b333e;--text:#f1f5f9;--muted:#9ba8b7;--blue:#77a2ff;--green:#68d49c}*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#111827 0,var(--bg) 38%);color:var(--text);font:14px/1.4 system-ui,-apple-system,sans-serif}main{max-width:1080px;margin:auto;padding:30px}header{display:flex;align-items:end;justify-content:space-between;gap:20px;margin-bottom:20px}h1{margin:0 0 6px;font-size:31px;letter-spacing:-1px}p{margin:0;color:var(--muted)}.tag{border:1px solid #345942;background:#12251a;color:var(--green);border-radius:999px;padding:7px 10px}.track{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.task{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px;min-height:126px}.task b{display:block;color:var(--blue);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}.task strong{display:block;margin-bottom:6px}.task span{color:var(--muted);font-size:12px}.gate{grid-column:1/-1;margin-top:2px;background:#111b17;border-color:#284b38}.gate b{color:var(--green)}.rule{height:1px;background:var(--line);margin:20px 0}.checks{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.checks div{padding:10px;border-radius:10px;background:#10151b;color:#cbd5e1;border:1px solid #242d37;font-size:12px}@media(max-width:850px){.track{grid-template-columns:1fr 1fr}.checks{grid-template-columns:1fr 1fr}.gate{grid-column:1/-1}}@media(max-width:520px){main{padding:18px}.track,.checks{grid-template-columns:1fr}.gate{grid-column:auto}header{align-items:start;flex-direction:column}}
+  </style>
+</head>
+<body><main>
+  <header><div><h1>Resolve V1 implementation map</h1><p>Test-first units converge on one real editor workflow.</p></div><div class="tag">Inline execution</div></header>
+  <section class="track">
+    <article class="task"><b>1 · Foundation</b><strong>Managed workspace</strong><span>Stable project/timeline identity and atomic OTIO promotion.</span></article>
+    <article class="task"><b>2 · Engine</b><strong>CLI sidecar</strong><span>Safe argument arrays, history parsing, and diagnostic errors.</span></article>
+    <article class="task"><b>3 · Host</b><strong>Resolve adapter</strong><span>Promise API context lookup and background timeline export.</span></article>
+    <article class="task"><b>4 · Flow</b><strong>Snapshot controller</strong><span>Serialized export → promote → commit → review pipeline.</span></article>
+    <article class="task"><b>5 · Security</b><strong>Electron boundary</strong><span>Sandbox, context isolation, and three-method preload allowlist.</span></article>
+    <article class="task"><b>6 · Experience</b><strong>Snapshot UI</strong><span>Project context, primary action, latest diff, and history.</span></article>
+    <article class="task"><b>7 · Delivery</b><strong>macOS installer</strong><span>Sidecar plus locally sourced Blackmagic native module.</span></article>
+    <article class="task"><b>8 · Guidance</b><strong>Plugin-first docs</strong><span>Manual export/watch becomes an advanced fallback.</span></article>
+    <article class="task gate"><b>9 · Runtime gate</b><strong>Prove it in DaVinci Resolve 20.3.2</strong><span>Plugin discovered → real timeline detected → first commit → visible diff → correct second semantic snapshot. V2 starts only after all five pass.</span></article>
+  </section>
+  <div class="rule"></div>
+  <section class="checks"><div>No manual OTIO action</div><div>No Terminal in normal use</div><div>No redistributed SDK binary</div><div>No completion claim without live proof</div></section>
+</main></body></html>
