@@ -88,7 +88,7 @@ function createVeditRunner({
       workspace.directory,
       'Vedit could not inspect automatic snapshot history.',
     );
-    if (!history) return true;
+    if (parseLog(history).length === 0) return true;
     const headSnapshotPath = path.join(workspace.directory, 'timeline.head.otio');
     const before = path.relative(workspace.directory, headSnapshotPath);
     const after = path.relative(workspace.directory, candidatePath);

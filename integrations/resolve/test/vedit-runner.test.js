@@ -236,7 +236,9 @@ test('initialized repository without HEAD is treated as a recoverable first snap
   await fs.writeFile(timelinePath, '{}');
   await fs.writeFile(candidatePath, '{}');
   const calls = [];
-  const execFile = successfulExecutor({ log: '' }, calls);
+  const execFile = successfulExecutor({
+    log: 'No commits yet. Run `vedit commit <timeline.otio>` to create one.',
+  }, calls);
   const runner = createVeditRunner({ binaryPath: '/plugin/bin/vedit', execFile, fsPromises: fs });
 
   assert.equal(await runner.hasSemanticChanges(
