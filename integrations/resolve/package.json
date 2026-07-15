@@ -5,6 +5,6 @@
   "description": "DaVinci Resolve workflow integration for Vedit",
   "type": "commonjs",
   "scripts": {
-    "test": "node --test test"
+    "test": "node --test test/*.test.js"
   }
 }
