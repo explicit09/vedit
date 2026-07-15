@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+  <title>Vedit</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="frame-rule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <main class="shell">
+    <header class="masthead">
+      <div class="brand-lockup">
+        <div class="mark" aria-hidden="true"><span>V</span></div>
+        <div>
+          <p class="eyebrow">Timeline version control</p>
+          <h1>Vedit</h1>
+        </div>
+      </div>
+      <div class="connection" aria-live="polite">
+        <span class="signal" id="signal"></span>
+        <span id="status-label">Connecting</span>
+      </div>
+    </header>
+
+    <section class="active-cut" aria-labelledby="active-heading">
+      <div>
+        <p class="section-label" id="active-heading">Active cut</p>
+        <h2 id="timeline-name">Waiting for Resolve…</h2>
+        <p class="project-name" id="project-name">No project detected yet</p>
+      </div>
+      <button class="snapshot-button" id="snapshot-button" type="button" disabled>
+        <span class="button-icon" aria-hidden="true"></span>
+        <span id="snapshot-label">Snapshot timeline</span>
+      </button>
+    </section>
+
+    <aside class="error-banner is-hidden" id="error-banner" role="alert">
+      <div>
+        <p class="error-kicker">Snapshot interrupted</p>
+        <p id="error-message"></p>
+        <details id="error-details-wrap" class="is-hidden">
+          <summary>Technical details</summary>
+          <pre id="error-details"></pre>
+        </details>
+      </div>
+      <button type="button" class="quiet-button" id="retry-button">Reconnect</button>
+    </aside>
+
+    <section class="review-stage">
+      <article class="latest-change is-hidden" id="latest-change">
+        <div class="change-rail" aria-hidden="true"><span></span></div>
+        <div class="change-content">
+          <div class="change-heading">
+            <div>
+              <p class="section-label">Latest snapshot</p>
+              <h3 id="latest-message"></h3>
+            </div>
+            <code id="latest-hash"></code>
+          </div>
+          <p class="commit-meta"><span id="latest-author"></span><span id="latest-date"></span></p>
+          <ul class="change-list" id="change-list"></ul>
+        </div>
+      </article>
+
+      <article class="empty-state" id="empty-state">
+        <div class="empty-orbit" aria-hidden="true"><span></span></div>
+        <p class="section-label">Local history is ready</p>
+        <h3>Capture this cut exactly as it is.</h3>
+        <p>Vedit will save the active timeline and describe what changes in every snapshot after it.</p>
+      </article>
+    </section>
+
+    <section class="history-section" aria-labelledby="history-heading">
+      <div class="history-heading">
+        <h2 id="history-heading">History</h2>
+        <span id="history-count">0 snapshots</span>
+      </div>
+      <ol class="history-list" id="history-list"></ol>
+    </section>
+  </main>
+  <script src="lib/view-state.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
